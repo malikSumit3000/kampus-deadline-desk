@@ -1,7 +1,6 @@
 "use client";
 
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   categories,
   categoryTabs,
@@ -14,6 +13,8 @@ import {
 } from "./dashboard-data";
 import { agendaAttribution, moderatorActionLabels, reviewActionLabels } from "@/lib/dashboard/presentation";
 import { makeManualAgenda } from "@/lib/dashboard/optimistic";
+import { mergeSyncResult, type GmailSyncDelta } from "@/lib/dashboard/sync";
+import type { ModeratorDecision } from "@/lib/reliability/rpc-contracts";
 import AskKampusDrawer from "./AskKampusDrawer";
 
 const navItems: Array<{ id: AppView; label: string; marker: string }> = [
@@ -44,7 +45,6 @@ type DashboardDialog =
   | null;
 
 export default function Dashboard({ initialData }: { initialData: DashboardData }) {
-  const router = useRouter();
   const [view, setView] = useState<AppView>("dashboard");
   const [category, setCategory] = useState<Category>("All");
   const [agendas, setAgendas] = useState(initialData.agendas);
@@ -64,6 +64,12 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
   const [dialog, setDialog] = useState<DashboardDialog>(null);
   const [showManualEntry, setShowManualEntry] = useState(false);
 
+  function applySyncDelta(delta: GmailSyncDelta<Agenda, ReviewItem>) {
+    setAgendas((current) => mergeSyncResult({ agendas: current, reviews: [] }, delta).agendas);
+    setReviews((current) => mergeSyncResult({ agendas: [], reviews: current }, delta).reviews);
+    setLastSync(new Date(delta.lastSyncAt).toLocaleString("en-IN"));
+  }
+
   useEffect(() => {
     if (!initialData.gmail.connected) return;
     const lastSyncAt = initialData.gmail.lastSyncAt ? new Date(initialData.gmail.lastSyncAt).getTime() : 0;
@@ -75,12 +81,15 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
       .then(({ response, result }) => {
         if (!active) return;
         if (!response.ok) throw new Error(result.error ?? "Background sync failed");
-        setLastSync("Just now");
-        if (result.candidates > 0) router.refresh();
+        applySyncDelta({
+          privateAgendas: result.privateAgendas ?? [],
+          reviews: result.reviews ?? [],
+          lastSyncAt: result.lastSyncAt,
+        });
       })
       .catch((error) => active && setNotice(error instanceof Error ? error.message : "Background sync failed"));
     return () => { active = false; };
-  }, [initialData.gmail.connected, initialData.gmail.lastSyncAt, router]);
+  }, [initialData.gmail.connected, initialData.gmail.lastSyncAt]);
 
   const visibleAgendas = useMemo(
     () =>
@@ -115,9 +124,12 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
       const response = await fetch("/api/gmail/sync", { method: "POST" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Sync failed");
-      setLastSync("Just now");
+      applySyncDelta({
+        privateAgendas: result.privateAgendas ?? [],
+        reviews: result.reviews ?? [],
+        lastSyncAt: result.lastSyncAt,
+      });
       setNotice(`Inbox checked: ${result.scanned} messages scanned, ${result.candidates} possible deadlines found.`);
-      if (result.candidates > 0) router.refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Sync failed");
     } finally {
@@ -132,11 +144,12 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
     setNotice(`${action}. Your decision was saved.`);
   }
 
-  async function resolveProposal(id: string, action: string) {
+  async function resolveProposal(id: string, action: ModeratorDecision) {
     const response = await fetch(`/api/moderator/proposals/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
     if (!response.ok) return setNotice("That moderator decision could not be saved.");
     setProposals((current) => current.filter((item) => item.id !== id));
-    setNotice(`${action}. The moderator decision was saved.`);
+    const savedLabel = action === "approve" ? "Proposal approved" : action === "private" ? "Proposal marked private" : "Proposal rejected";
+    setNotice(`${savedLabel}. The moderator decision was saved.`);
   }
 
   async function updateStageStatus(stageId: string, status: StageStatus) {
@@ -732,7 +745,7 @@ function ModeratorView({
   createSharedAgenda,
 }: {
   proposals: ModeratorProposal[];
-  resolveProposal: (id: string, action: string) => void;
+  resolveProposal: (id: string, action: ModeratorDecision) => void;
   createSharedAgenda: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
@@ -781,9 +794,9 @@ function ModeratorView({
             </div>
             <p className="proposal-source">{proposal.source}</p>
             <div className="action-row">
-              <button className="button primary" onClick={() => resolveProposal(proposal.id, "Merged and approved")}>{moderatorActionLabels[0]}</button>
-              <button className="button ghost" onClick={() => resolveProposal(proposal.id, "Marked private")}>{moderatorActionLabels[1]}</button>
-              <button className="button danger-text" onClick={() => resolveProposal(proposal.id, "Rejected")}>{moderatorActionLabels[2]}</button>
+              <button className="button primary" onClick={() => resolveProposal(proposal.id, "approve")}>{moderatorActionLabels[0]}</button>
+              <button className="button ghost" onClick={() => resolveProposal(proposal.id, "private")}>{moderatorActionLabels[1]}</button>
+              <button className="button danger-text" onClick={() => resolveProposal(proposal.id, "reject")}>{moderatorActionLabels[2]}</button>
             </div>
           </article>
         ))}

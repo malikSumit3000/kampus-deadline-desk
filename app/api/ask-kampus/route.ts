@@ -12,6 +12,7 @@ import {
 } from "@/lib/ask-kampus/core";
 import { getGmailMessage, refreshGoogleAccessToken, searchGmailMessageIds, summariseMessage } from "@/lib/gmail/client";
 import { decryptToken } from "@/lib/security/token-crypto";
+import { parseAllowanceResult } from "@/lib/reliability/rpc-contracts";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -53,21 +54,19 @@ export async function POST(request: Request) {
 
   const dailyLimit = safeLimit();
   const bounds = istDayBounds();
-  const { count } = await admin.from("audit_events").select("id", { count: "exact", head: true })
-    .eq("actor_id", user.id).eq("event_type", "ask_kampus_query")
-    .gte("created_at", bounds.start).lt("created_at", bounds.end);
-  const usageDecision = askAccessDecision({ authenticated: true, gmailConnected: true, usedToday: count ?? 0, dailyLimit });
-  if (usageDecision) {
+  const { data: allowanceData, error: allowanceError } = await admin.rpc("consume_ask_kampus_allowance", {
+    p_user_id: user.id,
+    p_day_start: bounds.start,
+    p_day_end: bounds.end,
+    p_limit: dailyLimit,
+  });
+  const allowance = parseAllowanceResult(allowanceData);
+  if (allowanceError || !allowance) {
+    return eventResponse("error", { code: "assistant_unavailable", message: "Ask Kampus is temporarily unavailable." }, 503);
+  }
+  if (!allowance.allowed || allowance.auditId === null) {
     return eventResponse("error", { code: "daily_limit", message: `You have used today’s ${dailyLimit} Ask Kampus questions. Try again tomorrow.` }, 429);
   }
-
-  const { data: audit } = await admin.from("audit_events").insert({
-    actor_id: user.id,
-    event_type: "ask_kampus_query",
-    target_type: "gmail",
-    metadata: { status: "started", source_count: 0, input_tokens: 0, output_tokens: 0 },
-  }).select("id").single();
-  if (!audit) return eventResponse("error", { code: "assistant_unavailable", message: "Ask Kampus is temporarily unavailable." }, 503);
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -145,11 +144,11 @@ export async function POST(request: Request) {
             }
           }
 
-          await admin.from("audit_events").update({ metadata: { status: "succeeded", source_count: sourceCount, input_tokens: inputTokens, output_tokens: outputTokens } }).eq("id", audit.id);
-          send("done", { remaining: Math.max(0, dailyLimit - (count ?? 0) - 1) });
+          await admin.from("audit_events").update({ metadata: { status: "succeeded", source_count: sourceCount, input_tokens: inputTokens, output_tokens: outputTokens } }).eq("id", allowance.auditId);
+          send("done", { remaining: allowance.remaining });
         } catch (error) {
           const errorCode = error instanceof Error ? error.message.slice(0, 80) : "assistant_failed";
-          await admin.from("audit_events").update({ metadata: { status: "failed", source_count: sourceCount, input_tokens: inputTokens, output_tokens: outputTokens, error_code: errorCode } }).eq("id", audit.id);
+          await admin.from("audit_events").update({ metadata: { status: "failed", source_count: sourceCount, input_tokens: inputTokens, output_tokens: outputTokens, error_code: errorCode } }).eq("id", allowance.auditId);
           send("error", { code: "assistant_unavailable", message: "Ask Kampus is temporarily unavailable. Check AI credits or reconnect Gmail if this continues." });
         } finally {
           controller.close();

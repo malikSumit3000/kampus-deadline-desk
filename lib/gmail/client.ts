@@ -47,6 +47,29 @@ export async function listCandidateMessageIds(accessToken: string, scanAfter: st
   return (data.messages ?? []).map(({ id }) => id);
 }
 
+export function limitSyncCandidates(ids: string[], limit = 10) {
+  return [...new Set(ids)].slice(0, Math.min(Math.max(1, limit), 10));
+}
+
+type MessageReceipt = {
+  message_id: string;
+  processing_status: "processing" | "succeeded" | "failed";
+  attempt_count: number;
+  updated_at: string;
+};
+
+export function selectSyncCandidates(ids: string[], receipts: MessageReceipt[], now = new Date()) {
+  const byMessageId = new Map(receipts.map((receipt) => [receipt.message_id, receipt]));
+  const staleBefore = now.getTime() - 10 * 60 * 1000;
+  return limitSyncCandidates(ids.filter((id) => {
+    const receipt = byMessageId.get(id);
+    if (!receipt) return true;
+    if (receipt.attempt_count >= 2 || receipt.processing_status === "succeeded") return false;
+    if (receipt.processing_status === "failed") return true;
+    return new Date(receipt.updated_at).getTime() < staleBefore;
+  }));
+}
+
 export async function searchGmailMessageIds(accessToken: string, query: string, maxResults = 10) {
   const params = new URLSearchParams({ q: query, maxResults: String(Math.min(Math.max(1, maxResults), 10)) });
   const data = await gmailFetch<{ messages?: Array<{ id: string }> }>(`/messages?${params}`, accessToken);
@@ -96,5 +119,5 @@ export function summariseMessage(message: GmailMessage) {
 
 export function isSensitiveMessage(summary: ReturnType<typeof summariseMessage>) {
   const text = `${summary.subject} ${summary.attachments.join(" ")} ${summary.body}`.toLowerCase();
-  return /\b(shortlist|roster|resume|cv|result|grade|marks|medical|salary)\b/.test(text);
+  return /\b(shortlist|roster|resume|cv|result|grade|marks|medical|salary|cgpa|transcript|compensation|ctc|diagnosis|prescription)\b|\boffer[\s_-]+(letter|details?|package)\b|\brank[\s_-]+list\b/.test(text);
 }
