@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "test": "pnpm test:node && pnpm test:unit",
-    "test:node": "node --test tests/*.test.mjs",
+    "test:node": "node --experimental-strip-types --test tests/*.test.mjs",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
     "lint": "eslint . --ignore-pattern .next",
