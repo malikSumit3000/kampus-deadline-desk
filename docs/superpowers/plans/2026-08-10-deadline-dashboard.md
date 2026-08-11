@@ -69,7 +69,7 @@ Expected: FAIL with a missing product-title or product-copy assertion, not a syn
 
 - [ ] **Step 1: Define the synthetic product model**
 
-Create exact union types for category and stage status, then seed four agendas spanning Case Comps, Placements, Committees, and Academics. Each agenda includes stable ID, shared/private classification, deadline, countdown, source label, confidence, detail, and at least one stage.
+Create exact union types for category and stage status. Do not seed example agendas; development and production must start empty, and verified records must enter through the application.
 
 - [ ] **Step 2: Implement the minimal workspace to satisfy the product contract**
 

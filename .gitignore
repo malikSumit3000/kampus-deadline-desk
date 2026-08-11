@@ -41,3 +41,6 @@ yarn-error.log*
 /work/
 /.worktrees/
 *.tsbuildinfo
+/test-results/
+/playwright-report/
+/blob-report/

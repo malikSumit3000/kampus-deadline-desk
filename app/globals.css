@@ -1877,3 +1877,24 @@ textarea:focus-visible {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Keep action labels readable across the compact dashboard controls. */
+.button,
+.nav-item,
+.review-pill,
+.warning-strip button,
+.tabs button,
+.category-add-tab,
+.category-add,
+.delete-task,
+.manual-deadline-toggle,
+.ask-launcher,
+.ask-header-actions button,
+.ask-prompts button {
+  font-size: 14px;
+}
+
+.nav-item small,
+.manual-deadline-toggle small {
+  font-size: 14px;
+}

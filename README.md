@@ -31,8 +31,8 @@ pnpm dev
 ## 1. Create Supabase
 
 1. Create a Supabase project.
-2. In the SQL editor, run `supabase/migrations/202608100001_initial_schema.sql`.
-3. For starter agenda rows, run `supabase/seed.sql`. Replace them with approved real batch announcements before opening the pilot.
+2. Apply every file in `supabase/migrations/` in filename order.
+3. `supabase/seed.sql` is intentionally empty. Add verified batch deadlines only through a moderator account.
 4. In Authentication → URL Configuration, set the Site URL to the final Vercel URL and allow `http://localhost:3000/auth/callback` and `https://YOUR_DOMAIN/auth/callback`.
 5. Enable only the Google provider in Supabase Auth.
 
@@ -70,12 +70,7 @@ Changing `TOKEN_ENCRYPTION_KEY` after users connect makes existing Gmail credent
 
 ## 5. Deploy to Vercel
 
-Import this folder into a new Vercel project or run:
-
-```bash
-pnpm dlx vercel
-pnpm dlx vercel --prod
-```
+Connect the private GitHub repository to the existing Vercel project. Pull requests create previews; only the protected `main` branch should promote to production.
 
 After the final domain is known, update the Supabase allowlist and Google redirect URI, then redeploy.
 

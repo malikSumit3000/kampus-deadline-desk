@@ -6,6 +6,7 @@ import { extractDeadline } from "@/lib/extraction/anthropic";
 import { routeExtraction } from "@/lib/extraction/policy";
 import { getGmailMessage, isSensitiveMessage, listCandidateMessageIds, refreshGoogleAccessToken, selectSyncCandidates, summariseMessage } from "@/lib/gmail/client";
 import { parseSyncLease } from "@/lib/reliability/rpc-contracts";
+import { logOperationalEvent } from "@/lib/observability/events";
 import { decryptToken } from "@/lib/security/token-crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -19,6 +20,7 @@ function dateLabel(value: string) {
 }
 
 export async function POST() {
+  const requestStartedAt = Date.now();
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -33,7 +35,10 @@ export async function POST() {
   });
   if (leaseError) return NextResponse.json({ error: "Could not start sync" }, { status: 500 });
   const lease = parseSyncLease(leaseData);
-  if (!lease) return NextResponse.json({ error: "An inbox refresh is already running." }, { status: 409 });
+  if (!lease) {
+    logOperationalEvent({ operation: "gmail_sync", status: "blocked", durationMs: Date.now() - requestStartedAt, messagesProcessed: 0, candidatesFound: 0, errorCode: "sync_lease_held" });
+    return NextResponse.json({ error: "An inbox refresh is already running." }, { status: 409 });
+  }
 
   let scanned = 0;
   let candidates = 0;
@@ -178,6 +183,7 @@ export async function POST() {
       admin.from("sync_runs").update({ status: "succeeded", finished_at: now, messages_scanned: scanned, candidates_found: candidates }).eq("id", lease.runId),
       admin.from("gmail_connections").update({ last_sync_at: now, last_error: null, updated_at: now }).eq("user_id", user.id),
     ]);
+    logOperationalEvent({ operation: "gmail_sync", status: "succeeded", durationMs: Date.now() - requestStartedAt, messagesProcessed: scanned, candidatesFound: candidates });
     return NextResponse.json({ scanned, candidates, lastSyncAt: now, privateAgendas, reviews: newReviews });
   } catch (error) {
     const code = error instanceof Error ? error.message.slice(0, 80) : "sync_failed";
@@ -186,6 +192,7 @@ export async function POST() {
       admin.from("sync_runs").update({ status: "failed", finished_at: now, messages_scanned: scanned, candidates_found: candidates, error_code: code }).eq("id", lease.runId),
       admin.from("gmail_connections").update({ last_error: code, updated_at: now }).eq("user_id", user.id),
     ]);
+    logOperationalEvent({ operation: "gmail_sync", status: "failed", durationMs: Date.now() - requestStartedAt, messagesProcessed: scanned, candidatesFound: candidates, errorCode: code });
     return NextResponse.json({ error: "Sync failed. Reconnect Gmail if this continues." }, { status: 502 });
   }
 }
