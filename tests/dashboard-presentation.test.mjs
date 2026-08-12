@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   agendaAttribution,
+  actionContextPreview,
   moderatorActionLabels,
   stageProgress,
   reviewActionLabels,
@@ -15,6 +16,15 @@ test("manual deadlines are attributed to the user rather than extraction confide
 
 test("extracted deadlines retain their confidence attribution", () => {
   assert.equal(agendaAttribution({ source: "Course Office", confidence: 0.92 }), "92% extraction confidence");
+});
+
+test("task rows show a concise action preview without losing the stored detail", () => {
+  const detail = "Marketing Management group assignment must be submitted by Friday. One PDF per group should be uploaded on the course portal with section and group number included.";
+  const preview = actionContextPreview(detail);
+  assert.ok(preview.length <= 80);
+  assert.match(preview, /One PDF/);
+  assert.ok(preview.endsWith("…"));
+  assert.equal(actionContextPreview("Upload the PDF"), "Upload the PDF");
 });
 
 test("review and moderator labels describe the existing decisions", () => {

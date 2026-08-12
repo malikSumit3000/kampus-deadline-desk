@@ -7,13 +7,15 @@ export default function ManualDeadlineForm({
   submitLabel,
   onSubmit,
   pending = false,
+  className = "",
 }: {
   submitLabel: string;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   pending?: boolean;
+  className?: string;
 }) {
   return (
-    <form className="manual-deadline-form" onSubmit={onSubmit}>
+    <form className={`manual-deadline-form ${className}`.trim()} onSubmit={onSubmit}>
       <label>Title<input name="title" maxLength={180} required placeholder="e.g. Submit case deck" /></label>
       <label>Category<select name="category" defaultValue="Academics">{categories.filter((category) => category !== "All").map((category) => <option key={category}>{category}</option>)}</select></label>
       <label>Deadline<input name="deadline" type="datetime-local" required /></label>

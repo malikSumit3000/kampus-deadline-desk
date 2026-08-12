@@ -16,6 +16,16 @@ const initialData = {
 };
 
 describe("dashboard keyboard behavior", () => {
+  it("gives the moderator publisher its own readable form layout", async () => {
+    const user = userEvent.setup();
+    render(<Dashboard initialData={{ ...initialData, profile: { ...initialData.profile, role: "moderator" } }} />);
+    await user.click(screen.getByRole("button", { name: /^Moderator queue/i }));
+
+    const publisher = screen.getByRole("region", { name: "Publish a verified shared deadline" });
+    expect(publisher).toHaveClass("moderator-publisher");
+    expect(within(publisher).getByRole("button", { name: "Publish shared deadline" }).closest("form")).toHaveClass("moderator-publish-form");
+  });
+
   it("keeps the date tile and title in one desktop task column", () => {
     render(<Dashboard initialData={{
       ...initialData,
