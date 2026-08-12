@@ -21,9 +21,9 @@ export default function ModeratorView({ proposals, resolveProposal, createShared
       <section className="health-grid" aria-label="Pilot health">
         <div><span>Open proposals</span><strong>{proposals.length}</strong></div><div><span>Queue access</span><strong><small>Role-gated</small></strong></div><div><span>Gmail permission</span><strong><small>Read only</small></strong></div><div><span>Raw mail storage</span><strong><small>None</small></strong></div>
       </section>
-      <section className="manual-deadline-card moderator-add" aria-label="Publish a verified shared deadline">
-        <div><p className="eyebrow">Verified shared base</p><h2>Publish a shared deadline</h2><p>Add only an announcement you have personally verified for the batch.</p></div>
-        <ManualDeadlineForm submitLabel="Publish shared deadline" onSubmit={createSharedAgenda} />
+      <section className="moderator-publisher" aria-label="Publish a verified shared deadline">
+        <div className="moderator-publisher-copy"><p className="eyebrow">Verified shared base</p><h2>Publish a shared deadline</h2><p>Add only an announcement you have personally verified for the batch.</p></div>
+        <ManualDeadlineForm className="moderator-publish-form" submitLabel="Publish shared deadline" onSubmit={createSharedAgenda} />
       </section>
       <div className="proposal-list">
         {proposals.length === 0 && <EmptyState title="Queue cleared" copy="No shared announcement is waiting for approval." />}
