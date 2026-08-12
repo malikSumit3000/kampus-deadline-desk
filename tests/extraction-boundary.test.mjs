@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { normaliseDeadlineExtraction } from "../lib/extraction/normalise.ts";
 import { classifySyncFailure } from "../lib/extraction/errors.ts";
+import { readExtractionToolInput } from "../lib/extraction/tool-contract.ts";
 
 const valid = {
   relevant: true,
@@ -46,3 +47,13 @@ test("distinguishes AI validation failures from Gmail connection failures", () =
   });
 });
 
+test("reads only the forced deadline extraction tool result", () => {
+  assert.deepEqual(readExtractionToolInput([
+    { type: "text", text: "I found a deadline." },
+    { type: "tool_use", name: "record_deadline_extraction", input: valid },
+  ]), valid);
+  assert.throws(
+    () => readExtractionToolInput([{ type: "text", text: JSON.stringify(valid) }]),
+    /model_output_missing/,
+  );
+});
