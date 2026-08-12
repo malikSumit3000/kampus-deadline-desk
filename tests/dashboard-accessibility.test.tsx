@@ -41,6 +41,8 @@ describe("dashboard keyboard behavior", () => {
     expect(taskCell).toContainElement(summary.querySelector(".urgency"));
     expect(taskCell).toContainElement(summary.querySelector(".agenda-main"));
     expect(summary.children).toHaveLength(7);
+    expect(summary.querySelector(".expand-mark svg")).not.toBeNull();
+    expect(summary.querySelector(".expand-mark")).toHaveClass("is-open");
   });
 
   it("links category tabs to their panel and supports arrow-key selection", async () => {
