@@ -7,3 +7,9 @@ export function agendaAttribution({ source, confidence }: { source: string; conf
 export const reviewActionLabels = ["Mark reviewed", "Mark correction noted", "Dismiss"] as const;
 
 export const moderatorActionLabels = ["Approve proposal", "Mark private", "Reject"] as const;
+
+export function stageProgress(status: "to-do" | "in progress" | "submitted") {
+  if (status === "submitted") return { percent: 100, label: "Submitted", tone: "complete" as const };
+  if (status === "in progress") return { percent: 50, label: "In progress", tone: "active" as const };
+  return { percent: 0, label: "To do", tone: "not-started" as const };
+}

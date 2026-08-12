@@ -18,6 +18,7 @@ import DashboardView from "./dashboard/DashboardView";
 import ModeratorView from "./dashboard/ModeratorView";
 import PrivacyView from "./dashboard/PrivacyView";
 import ReviewView from "./dashboard/ReviewView";
+import ThemeToggle from "./ThemeToggle";
 
 const navItems: Array<{ id: AppView; label: string; marker: string }> = [
   { id: "dashboard", label: "Deadline runway", marker: "01" },
@@ -371,6 +372,8 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
             ))}
           </select>
         </header>
+
+        <div className="workspace-theme-toggle"><ThemeToggle /></div>
 
         {notice && (
           <div className="toast" role="status">

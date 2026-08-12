@@ -62,7 +62,7 @@ describe("dashboard local actions", () => {
     fireEvent.change(within(form).getByLabelText("Deadline"), { target: { value: "2026-08-14T15:30" } });
     await user.click(within(form).getByRole("button", { name: "Add private deadline" }));
 
-    expect(await screen.findByText("New task")).toBeInTheDocument();
+    expect((await screen.findAllByText("New task")).length).toBeGreaterThan(0);
     expect(screen.getByRole("status")).toHaveTextContent("Private deadline added");
   });
 

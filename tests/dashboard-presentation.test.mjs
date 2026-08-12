@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   agendaAttribution,
   moderatorActionLabels,
+  stageProgress,
   reviewActionLabels,
 } from "../lib/dashboard/presentation.ts";
 import { makeManualAgenda } from "../lib/dashboard/optimistic.ts";
@@ -19,6 +20,12 @@ test("extracted deadlines retain their confidence attribution", () => {
 test("review and moderator labels describe the existing decisions", () => {
   assert.deepEqual(reviewActionLabels, ["Mark reviewed", "Mark correction noted", "Dismiss"]);
   assert.deepEqual(moderatorActionLabels, ["Approve proposal", "Mark private", "Reject"]);
+});
+
+test("stage progress uses the saved task status rather than an invented percentage", () => {
+  assert.deepEqual(stageProgress("to-do"), { percent: 0, label: "To do", tone: "not-started" });
+  assert.deepEqual(stageProgress("in progress"), { percent: 50, label: "In progress", tone: "active" });
+  assert.deepEqual(stageProgress("submitted"), { percent: 100, label: "Submitted", tone: "complete" });
 });
 
 test("a newly saved manual deadline can be shown locally without a dashboard reload", () => {
