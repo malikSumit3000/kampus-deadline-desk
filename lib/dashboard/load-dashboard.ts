@@ -82,6 +82,7 @@ export async function loadDashboard(user: User) {
       received: dateLabel(item.received_at), reason: item.reason,
       proposedDate: item.proposed_deadline ? dateLabel(item.proposed_deadline) : "No deadline extracted",
       source: item.gmail_message_id ? "Open in Gmail" : "Imported item",
+      canAddToDashboard: Boolean(item.proposed_deadline),
     })) as ReviewItem[],
     proposals,
     gmail: { connected: Boolean(connection), lastSyncAt: connection?.last_sync_at ?? null, error: connection?.last_error ?? null },

@@ -18,6 +18,7 @@ import { DELETE as deleteAgenda } from "../app/api/agendas/[id]/route";
 import { POST as askKampus } from "../app/api/ask-kampus/route";
 import { POST as syncGmail } from "../app/api/gmail/sync/route";
 import { PATCH as resolveProposal } from "../app/api/moderator/proposals/[id]/route";
+import { PATCH as resolveReview } from "../app/api/reviews/[id]/route";
 
 function unauthenticatedClient() {
   return { auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) } };
@@ -66,6 +67,53 @@ describe("route authorization boundaries", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "Merged and approved" }),
     }), { params: Promise.resolve({ id: "p-1" }) });
+
+    expect(response.status).toBe(400);
+    expect(mocks.createServerClient).not.toHaveBeenCalled();
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it("resolves a review atomically and returns the created private agenda", async () => {
+    mocks.createServerClient.mockResolvedValue(authenticatedClient());
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        status: "approved",
+        agenda: {
+          id: "private-3",
+          title: "Marketing submission",
+          category: "Academics",
+          detail: "Upload the PDF",
+          source_label: "Gmail review",
+          confidence: 0.91,
+          deadline: "2026-08-20T12:30:00.000Z",
+          status: "to-do",
+        },
+      },
+      error: null,
+    });
+    mocks.createAdminClient.mockReturnValue({ rpc });
+
+    const response = await resolveReview(new Request("http://localhost/api/reviews/review-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "approve" }),
+    }), { params: Promise.resolve({ id: "review-1" }) });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, status: "approved", agenda: { id: "private-3" } });
+    expect(rpc).toHaveBeenCalledWith("resolve_review_item", {
+      p_actor_id: "user-1",
+      p_review_id: "review-1",
+      p_action: "approve",
+    });
+  });
+
+  it("rejects legacy review labels before authentication or database access", async () => {
+    const response = await resolveReview(new Request("http://localhost/api/reviews/review-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "Approved" }),
+    }), { params: Promise.resolve({ id: "review-1" }) });
 
     expect(response.status).toBe(400);
     expect(mocks.createServerClient).not.toHaveBeenCalled();

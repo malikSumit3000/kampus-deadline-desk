@@ -121,6 +121,7 @@ export async function POST() {
             reason: review.reason,
             proposedDate: "Time not stated",
             source: "Open in Gmail",
+            canAddToDashboard: false,
           });
           outcome = "review";
           candidates += 1;
@@ -145,6 +146,7 @@ export async function POST() {
             reason: review.reason,
             proposedDate: "No deadline extracted",
             source: "Open in Gmail",
+            canAddToDashboard: false,
           });
           outcome = "review";
           candidates += 1;
@@ -175,6 +177,7 @@ export async function POST() {
               reason: review.reason,
               proposedDate: review.proposed_deadline ? dateLabel(review.proposed_deadline) : "No deadline extracted",
               source: "Open in Gmail",
+              canAddToDashboard: Boolean(review.proposed_deadline),
             });
           } else if (route === "private" && extraction.deadline) {
             const { data: agenda, error: agendaError } = await admin.from("private_agendas").insert({

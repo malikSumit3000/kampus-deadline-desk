@@ -35,6 +35,7 @@ export type ReviewItem = {
   reason: string;
   proposedDate: string;
   source: string;
+  canAddToDashboard: boolean;
 };
 
 export type ModeratorProposal = {
