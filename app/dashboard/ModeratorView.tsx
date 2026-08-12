@@ -16,14 +16,14 @@ export default function ModeratorView({ proposals, resolveProposal, createShared
     <div className="page-wrap wide-page">
       <header className="page-heading">
         <div><p className="eyebrow">Moderator only · shared base</p><h1>Moderator queue</h1><p className="lede">Approve the common fact once. Keep student-specific context private.</p></div>
-        <div className="health-mini"><span className="health-dot" /> All systems nominal</div>
+        <div className="health-mini"><span className="health-dot" aria-hidden="true" /> Moderator access active</div>
       </header>
       <section className="health-grid" aria-label="Pilot health">
         <div><span>Open proposals</span><strong>{proposals.length}</strong></div><div><span>Queue access</span><strong><small>Role-gated</small></strong></div><div><span>Gmail permission</span><strong><small>Read only</small></strong></div><div><span>Raw mail storage</span><strong><small>None</small></strong></div>
       </section>
       <section className="moderator-publisher" aria-label="Publish a verified shared deadline">
         <div className="moderator-publisher-copy"><p className="eyebrow">Verified shared base</p><h2>Publish a shared deadline</h2><p>Add only an announcement you have personally verified for the batch.</p></div>
-        <ManualDeadlineForm className="moderator-publish-form" submitLabel="Publish shared deadline" onSubmit={createSharedAgenda} />
+        <ManualDeadlineForm variant="moderator" className="moderator-publish-form" submitLabel="Publish shared deadline" onSubmit={createSharedAgenda} />
       </section>
       <div className="proposal-list">
         {proposals.length === 0 && <EmptyState title="Queue cleared" copy="No shared announcement is waiting for approval." />}

@@ -2,7 +2,7 @@
 
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { categoryTabs, type Agenda, type Category, type StageStatus } from "../dashboard-data";
-import { actionContextPreview, agendaAttribution, stageProgress } from "@/lib/dashboard/presentation";
+import { actionContextPreview, agendaAttribution, deadlineCountdownLabel, selectUpNext, stageProgress } from "@/lib/dashboard/presentation";
 import ManualDeadlineForm from "./ManualDeadlineForm";
 
 const statuses: StageStatus[] = ["to-do", "in progress", "submitted"];
@@ -33,7 +33,7 @@ function categoryTone(category: string) {
 export default function DashboardView(props: DashboardViewProps) {
   const { category, setCategory, visibleAgendas, expanded, toggleAgenda, stageStates, updateStageStatus, privateDates, updatePrivateDate, syncing, refreshInbox, openReviews, reviewCount, gmailConnected, gmailError, createManualDeadline, availableCategories, updatePersonalCategory, openCategoryDialog, openDeleteDialog, canDeleteShared, nowMs, pendingAction, showManualEntry, setShowManualEntry, openGmailDetails } = props;
   const tabs = categoryTabs(availableCategories);
-  const upNext = visibleAgendas[0] ?? null;
+  const upNext = selectUpNext(visibleAgendas, stageStates, nowMs);
   const dueIn24h = visibleAgendas.filter((agenda) => { const remaining = new Date(agenda.deadline).getTime() - nowMs; return remaining >= 0 && remaining <= 86_400_000; }).length;
   const dueThisWeek = visibleAgendas.filter((agenda) => { const remaining = new Date(agenda.deadline).getTime() - nowMs; return remaining > 86_400_000 && remaining <= 604_800_000; }).length;
   const privateCount = visibleAgendas.filter((agenda) => agenda.scope === "private").length;
@@ -51,13 +51,13 @@ export default function DashboardView(props: DashboardViewProps) {
       <div className="header-utilities">
         <span className={`gmail-mini ${gmailError ? "needs-attention" : ""}`}>{gmailConnected ? "Gmail connected · Read only" : "Gmail not connected"}</span>
         <button className="button gmail-action" onClick={refreshInbox} disabled={syncing}>{syncing ? "Checking…" : gmailConnected ? "Refresh inbox" : "Connect Gmail"}</button>
-        {gmailConnected && <button className="info-button" onClick={openGmailDetails} aria-label="How Gmail access works">i</button>}
+        {gmailConnected && <button className="info-button control-target" onClick={openGmailDetails} aria-label="How Gmail access works">i</button>}
       </div>
     </header>
 
     {upNext && <section className="up-next" aria-label="Your next deadline">
       <div className={`up-next-date urgency-${upNext.urgency}`}><small>{dateTile(upNext.deadline).month}</small><strong>{dateTile(upNext.deadline).day}</strong></div>
-      <div className="up-next-copy"><p className="eyebrow">Up next</p><h2>{upNext.title}</h2><div><span className={`category-pill ${categoryTone(upNext.category)}`}>{upNext.category}</span><span className={`countdown-chip urgency-${upNext.urgency}`}>{upNext.countdown} left</span></div></div>
+      <div className="up-next-copy"><p className="eyebrow">Up next</p><h2>{upNext.title}</h2><div><span className={`category-pill ${categoryTone(upNext.category)}`}>{upNext.category}</span><span className={`countdown-chip urgency-${upNext.urgency}`}>{deadlineCountdownLabel(upNext, nowMs)}</span></div></div>
       <button className="button open-task" onClick={() => toggleAgenda(upNext.id)} aria-expanded={expanded.includes(upNext.id)}>Open task</button>
     </section>}
 
@@ -73,8 +73,9 @@ export default function DashboardView(props: DashboardViewProps) {
         <div className="agenda-table-head" aria-hidden="true"><span>Task</span><span>Deadline</span><span>Action / context</span><span>Category</span><span>Source</span><span>Status</span><span /></div>
         {visibleAgendas.map((agenda) => {
           const isOpen = expanded.includes(agenda.id); const status = taskStatus(agenda); const tile = dateTile(agenda.deadline);
-          return <article className={`agenda-card scope-${agenda.scope}`} key={agenda.id}>
-            <button className="agenda-summary" onClick={() => toggleAgenda(agenda.id)} aria-expanded={isOpen}>
+          const isOverdue = new Date(agenda.deadline).getTime() < nowMs;
+          return <article className={`agenda-card scope-${agenda.scope}${isOverdue ? " is-overdue" : ""}`} key={agenda.id}>
+            <button className="agenda-summary" onClick={() => toggleAgenda(agenda.id)} aria-label={`${isOpen ? "Collapse" : "Expand"} ${agenda.title}`} aria-expanded={isOpen}>
               <span className="agenda-task-cell"><span className={`urgency urgency-${agenda.urgency}`}><small>{tile.month}</small><strong>{tile.day}</strong></span><span className="agenda-main"><strong className="agenda-title">{agenda.title}</strong><small className="mobile-deadline">{dateParts(agenda.deadline)}</small></span></span>
               <span className="agenda-deadline">{dateParts(agenda.deadline)}</span><span className="agenda-context" title={agenda.detail}>{actionContextPreview(agenda.detail)}</span>
               <span className={`category-pill ${categoryTone(agenda.category)}`}>{agenda.category}</span><span className="agenda-source">{agenda.source}</span>
@@ -85,6 +86,6 @@ export default function DashboardView(props: DashboardViewProps) {
         })}
       </div>
     </section>
-    <section className="manual-deadline-card manual-deadline-panel" aria-label="Add a private deadline"><button type="button" className="manual-deadline-toggle" aria-label="Add a private deadline" onClick={() => setShowManualEntry(!showManualEntry)} aria-expanded={showManualEntry}><span><span className="eyebrow">Personal planning</span><strong>+ Add private deadline</strong><small>Visible only to you.</small></span><span aria-hidden="true">{showManualEntry ? "−" : "+"}</span></button>{showManualEntry && <ManualDeadlineForm submitLabel={pendingAction === "manual-deadline" ? "Adding…" : "Add private deadline"} onSubmit={createManualDeadline} pending={pendingAction === "manual-deadline"} />}</section>
+    <section className={`manual-deadline-card manual-deadline-panel${showManualEntry ? " is-open" : ""}`} aria-label="Add a private deadline"><button type="button" className="manual-deadline-toggle" aria-label="Add a private deadline" onClick={() => setShowManualEntry(!showManualEntry)} aria-expanded={showManualEntry}><span><span className="eyebrow">Personal planning</span><strong>Add private deadline</strong><small>Visible only to you.</small></span><span className="manual-toggle-mark" aria-hidden="true">{showManualEntry ? "−" : "+"}</span></button>{showManualEntry && <ManualDeadlineForm submitLabel={pendingAction === "manual-deadline" ? "Adding…" : "Add private deadline"} onSubmit={createManualDeadline} pending={pendingAction === "manual-deadline"} />}</section>
   </div>;
 }
