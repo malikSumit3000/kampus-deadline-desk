@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { normalizeIimkEmail } from "@/lib/auth/domain-policy";
+import { initialGmailScanAfter } from "@/lib/gmail/backfill";
 import { exchangeGoogleCode, googleAccountEmail } from "@/lib/google/oauth";
 import { encryptToken } from "@/lib/security/token-crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -32,12 +33,14 @@ export async function GET(request: Request) {
     }
 
     const admin = createSupabaseAdminClient();
+    const connectedAt = new Date().toISOString();
     const { error } = await admin.from("gmail_connections").upsert({
       user_id: user.id,
       google_email: connectedEmail,
       encrypted_refresh_token: encryptToken(tokens.refresh_token, process.env.TOKEN_ENCRYPTION_KEY!),
-      connected_at: new Date().toISOString(),
-      scan_after: new Date().toISOString(),
+      connected_at: connectedAt,
+      scan_after: initialGmailScanAfter(connectedAt),
+      backfill_completed_at: null,
       revoked_at: null,
       last_error: null,
       updated_at: new Date().toISOString(),
@@ -48,4 +51,3 @@ export async function GET(request: Request) {
     return back(request, "failed");
   }
 }
-

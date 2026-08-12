@@ -43,14 +43,14 @@ describe("route authorization boundaries", () => {
     mocks.createServerClient.mockResolvedValue(unauthenticatedClient());
   });
 
-  it("rejects unauthenticated Ask Kampus requests before creating an admin client", async () => {
-    const response = await askKampus(new Request("http://localhost/api/ask-kampus", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ question: "What is due?", history: [] }),
-    }));
+  it("returns a stable Ask Kampus unavailable response without accessing user data", async () => {
+    const response = await askKampus();
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(410);
+    expect(await response.json()).toEqual({
+      code: "ask_kampus_unavailable",
+      error: "Ask Kampus is coming soon.",
+    });
     expect(mocks.createAdminClient).not.toHaveBeenCalled();
   });
 
@@ -70,51 +70,6 @@ describe("route authorization boundaries", () => {
     expect(response.status).toBe(400);
     expect(mocks.createServerClient).not.toHaveBeenCalled();
     expect(mocks.createAdminClient).not.toHaveBeenCalled();
-  });
-
-  it("returns a stable disconnected error without consuming Ask Kampus allowance", async () => {
-    mocks.createServerClient.mockResolvedValue(authenticatedClient());
-    const rpc = vi.fn();
-    mocks.createAdminClient.mockReturnValue({
-      from: vi.fn().mockReturnValue(connectionQuery(null)),
-      rpc,
-    });
-
-    const response = await askKampus(new Request("http://localhost/api/ask-kampus", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ question: "What is due?", history: [] }),
-    }));
-
-    expect(response.status).toBe(409);
-    expect(await response.text()).toContain("gmail_not_connected");
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it("enforces the atomic Ask Kampus allowance before any AI or Gmail work", async () => {
-    mocks.createServerClient.mockResolvedValue(authenticatedClient());
-    const rpc = vi.fn().mockResolvedValue({
-      data: [{ allowed: false, audit_id: null, used: 10, remaining: 0 }],
-      error: null,
-    });
-    mocks.createAdminClient.mockReturnValue({
-      from: vi.fn().mockReturnValue(connectionQuery({
-        google_email: "student@iimk.ac.in",
-        encrypted_refresh_token: "unused",
-        scan_after: "2026-08-11T00:00:00.000Z",
-      })),
-      rpc,
-    });
-
-    const response = await askKampus(new Request("http://localhost/api/ask-kampus", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ question: "What is due?", history: [] }),
-    }));
-
-    expect(response.status).toBe(429);
-    expect(await response.text()).toContain("daily_limit");
-    expect(rpc).toHaveBeenCalledOnce();
   });
 
   it("returns a conflict when the Gmail sync lease is already held", async () => {

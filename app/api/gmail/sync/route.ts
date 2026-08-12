@@ -5,7 +5,9 @@ import { makeManualAgenda } from "@/lib/dashboard/optimistic";
 import { extractDeadline } from "@/lib/extraction/anthropic";
 import { classifySyncFailure } from "@/lib/extraction/errors";
 import { routeExtraction } from "@/lib/extraction/policy";
+import { shouldCompleteBackfill } from "@/lib/gmail/backfill";
 import { getGmailMessage, isSensitiveMessage, listCandidateMessageIds, refreshGoogleAccessToken, selectSyncCandidates, summariseMessage } from "@/lib/gmail/client";
+import { classifyShortlistDeadline } from "@/lib/gmail/shortlist";
 import { parseSyncLease } from "@/lib/reliability/rpc-contracts";
 import { logOperationalEvent } from "@/lib/observability/events";
 import { decryptToken } from "@/lib/security/token-crypto";
@@ -22,6 +24,7 @@ function dateLabel(value: string) {
 
 export async function POST() {
   const requestStartedAt = Date.now();
+  const syncStartedAt = new Date().toISOString();
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -43,6 +46,7 @@ export async function POST() {
 
   let scanned = 0;
   let candidates = 0;
+  const processedIds: string[] = [];
   const privateAgendas: Agenda[] = [];
   const newReviews: ReviewItem[] = [];
   try {
@@ -73,7 +77,56 @@ export async function POST() {
       scanned += 1;
       let outcome = "ignored";
       try {
-        if (isSensitiveMessage(summary)) {
+        const shortlist = classifyShortlistDeadline(summary);
+        if (shortlist.kind === "deadline") {
+          const { data: agenda, error: agendaError } = await admin.from("private_agendas").insert({
+            user_id: user.id,
+            title: "Shortlist action deadline",
+            category: "Placements",
+            detail: "Open the original email for the action instructions.",
+            source_label: "Gmail · sensitive details withheld",
+            confidence: 1,
+            deadline: shortlist.deadline,
+          }).select("id,title,category,detail,source_label,confidence,deadline,status").single();
+          if (agendaError || !agenda) throw new Error("private_agenda_insert_failed");
+          privateAgendas.push(makeManualAgenda({
+            id: agenda.id,
+            title: agenda.title,
+            category: agenda.category,
+            detail: agenda.detail,
+            deadline: agenda.deadline,
+            scope: "private",
+            source: agenda.source_label,
+            confidence: Number(agenda.confidence),
+            status: agenda.status,
+          }));
+          outcome = "private";
+          candidates += 1;
+        } else if (shortlist.kind === "review") {
+          const reason = "This shortlist message contains an action date but no exact time. Open Gmail to verify the deadline.";
+          const { data: review, error: reviewError } = await admin.from("review_items").insert({
+            user_id: user.id,
+            kind: "Date needs review",
+            title: "Shortlist action deadline",
+            reason,
+            gmail_message_id: id,
+            received_at: summary.receivedAt,
+          }).select("id,kind,title,reason,proposed_deadline,received_at,gmail_message_id").single();
+          if (reviewError || !review) throw new Error("review_item_insert_failed");
+          newReviews.push({
+            id: review.id,
+            kind: review.kind,
+            title: review.title,
+            received: dateLabel(review.received_at),
+            reason: review.reason,
+            proposedDate: "Time not stated",
+            source: "Open in Gmail",
+          });
+          outcome = "review";
+          candidates += 1;
+        } else if (shortlist.kind === "ignore") {
+          outcome = "ignored_sensitive";
+        } else if (isSensitiveMessage(summary)) {
           const reason = "Potentially sensitive roster or personal document; model extraction was bypassed.";
           const { data: review, error: reviewError } = await admin.from("review_items").insert({
             user_id: user.id,
@@ -145,18 +198,6 @@ export async function POST() {
               confidence: Number(agenda.confidence),
               status: agenda.status,
             }));
-          } else if (route === "moderator" && extraction.deadline) {
-            const { error: proposalError } = await admin.from("moderator_proposals").insert({
-              action: extraction.action,
-              title: extraction.title,
-              before_value: extraction.action === "new" ? "No shared record" : "Existing shared date",
-              proposed_value: extraction.deadline,
-              source_summary: `IIMK message · ${summary.sender}`,
-              confidence: extraction.confidence,
-              payload: extraction,
-              submitted_by: user.id,
-            });
-            if (proposalError) throw new Error("moderator_proposal_insert_failed");
           }
         }
 
@@ -168,6 +209,7 @@ export async function POST() {
           updated_at: new Date().toISOString(),
         }).eq("user_id", user.id).eq("message_id", id);
         if (receiptError) throw new Error("gmail_receipt_update_failed");
+        processedIds.push(id);
       } catch (error) {
         const code = error instanceof Error ? error.message.slice(0, 80) : "message_processing_failed";
         await admin.from("gmail_message_receipts").update({
@@ -180,9 +222,13 @@ export async function POST() {
     }
 
     const now = new Date().toISOString();
+    const backfillComplete = !connection.backfill_completed_at && shouldCompleteBackfill(candidateIds, receipts ?? [], processedIds);
+    const connectionUpdate = backfillComplete
+      ? { last_sync_at: now, last_error: null, scan_after: syncStartedAt, backfill_completed_at: now, updated_at: now }
+      : { last_sync_at: now, last_error: null, updated_at: now };
     await Promise.all([
       admin.from("sync_runs").update({ status: "succeeded", finished_at: now, messages_scanned: scanned, candidates_found: candidates }).eq("id", lease.runId),
-      admin.from("gmail_connections").update({ last_sync_at: now, last_error: null, updated_at: now }).eq("user_id", user.id),
+      admin.from("gmail_connections").update(connectionUpdate).eq("user_id", user.id),
     ]);
     logOperationalEvent({ operation: "gmail_sync", status: "succeeded", durationMs: Date.now() - requestStartedAt, messagesProcessed: scanned, candidatesFound: candidates });
     return NextResponse.json({ scanned, candidates, lastSyncAt: now, privateAgendas, reviews: newReviews });

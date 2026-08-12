@@ -42,9 +42,17 @@ async function gmailFetch<T>(path: string, accessToken: string): Promise<T> {
 export async function listCandidateMessageIds(accessToken: string, scanAfter: string) {
   const after = Math.floor(new Date(scanAfter).getTime() / 1000);
   const q = `after:${after} {deadline "due by" submit registration shortlist extension "last date"}`;
-  const params = new URLSearchParams({ q, maxResults: "50" });
-  const data = await gmailFetch<{ messages?: Array<{ id: string }> }>(`/messages?${params}`, accessToken);
-  return (data.messages ?? []).map(({ id }) => id);
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < 10; page += 1) {
+    const params = new URLSearchParams({ q, maxResults: "50" });
+    if (pageToken) params.set("pageToken", pageToken);
+    const data = await gmailFetch<{ messages?: Array<{ id: string }>; nextPageToken?: string }>(`/messages?${params}`, accessToken);
+    ids.push(...(data.messages ?? []).map(({ id }) => id));
+    pageToken = data.nextPageToken;
+    if (!pageToken) break;
+  }
+  return [...new Set(ids)];
 }
 
 export function limitSyncCandidates(ids: string[], limit = 10) {

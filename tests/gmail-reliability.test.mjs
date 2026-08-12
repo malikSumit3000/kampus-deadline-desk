@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { initialGmailScanAfter, shouldCompleteBackfill } from "../lib/gmail/backfill.ts";
+import { classifyShortlistDeadline } from "../lib/gmail/shortlist.ts";
 import { isSensitiveMessage, limitSyncCandidates, selectSyncCandidates } from "../lib/gmail/client.ts";
 import { mergeSyncResult } from "../lib/dashboard/sync.ts";
 import { makeManualAgenda } from "../lib/dashboard/optimistic.ts";
@@ -39,6 +41,51 @@ test("selects ten unprocessed or retryable messages instead of ten recent receip
     selectSyncCandidates(ids, receipts, new Date("2026-08-11T09:00:00.000Z")),
     ["m-10", "m-11", "m-14", "m-15", "m-16", "m-17", "m-18"],
   );
+});
+
+test("starts a Gmail connection seven days before the connection time", () => {
+  assert.equal(
+    initialGmailScanAfter("2026-08-12T10:30:00.000Z"),
+    "2026-08-05T10:30:00.000Z",
+  );
+});
+
+test("completes backfill only when no eligible candidate remains after this batch", () => {
+  const tenIds = Array.from({ length: 10 }, (_, index) => `m-${index}`);
+  const elevenIds = [...tenIds, "m-10"];
+  assert.equal(shouldCompleteBackfill(tenIds, [], tenIds), true);
+  assert.equal(shouldCompleteBackfill(elevenIds, [], tenIds), false);
+  assert.equal(shouldCompleteBackfill(elevenIds, [{
+    message_id: "m-10",
+    processing_status: "succeeded",
+    attempt_count: 1,
+    updated_at: "2026-08-12T10:00:00.000Z",
+  }], tenIds), true);
+});
+
+test("extracts an explicit shortlist action date locally without retaining sensitive text", () => {
+  assert.deepEqual(classifyShortlistDeadline(summary({
+    subject: "Company shortlist announcement",
+    body: "Selected students must confirm participation by 14 August 2026 at 6:00 PM IST. Candidate names follow.",
+  })), {
+    kind: "deadline",
+    deadline: "2026-08-14T12:30:00.000Z",
+  });
+});
+
+test("routes a date-only shortlist action to metadata-only review", () => {
+  assert.deepEqual(classifyShortlistDeadline(summary({
+    subject: "Placement selection list",
+    body: "Selected students must confirm participation by 14 August 2026. Candidate names follow.",
+  })), { kind: "review" });
+});
+
+test("ignores shortlist messages without an explicit action deadline", () => {
+  assert.deepEqual(classifyShortlistDeadline(summary({
+    subject: "Placement shortlist",
+    body: "Interviews will be held on 14 August 2026 at 6:00 PM IST.",
+  })), { kind: "ignore" });
+  assert.deepEqual(classifyShortlistDeadline(summary()), { kind: "not_shortlist" });
 });
 
 test("withholds expanded academic, compensation, offer, and medical variants", () => {

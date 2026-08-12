@@ -438,7 +438,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
           onCreateCategory={createPersonalCategory}
           onDelete={deleteAgenda}
         />
-        <AskKampusLauncher gmailConnected={initialData.gmail.connected} />
+        <AskKampusLauncher />
       </main>
     </div>
   );
