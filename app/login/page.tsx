@@ -1,4 +1,5 @@
 import GoogleSignInButton from "./GoogleSignInButton";
+import ThemeToggle from "../ThemeToggle";
 
 export default async function LoginPage({
   searchParams,
@@ -9,6 +10,7 @@ export default async function LoginPage({
   return (
     <main className="auth-page">
       <section className="auth-card">
+        <div className="auth-tools"><ThemeToggle /></div>
         <span className="brand-mark">K</span>
         <p className="eyebrow">Kampus deadline desk</p>
         <h1>Your deadlines, personally organised.</h1>
@@ -20,4 +22,3 @@ export default async function LoginPage({
     </main>
   );
 }
-

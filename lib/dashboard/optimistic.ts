@@ -1,4 +1,4 @@
-import type { Agenda } from "@/app/dashboard-data";
+import type { Agenda, StageStatus } from "@/app/dashboard-data";
 
 type ManualAgendaInput = {
   id: string;
@@ -8,6 +8,9 @@ type ManualAgendaInput = {
   detail: string;
   scope: Agenda["scope"];
   stageId?: string;
+  source?: string;
+  confidence?: number;
+  status?: StageStatus;
 };
 
 function displayDate(deadline: string) {
@@ -36,14 +39,14 @@ export function makeManualAgenda(input: ManualAgendaInput): Agenda {
     deadline: input.deadline,
     displayDate: label,
     detail: input.detail,
-    source: input.scope === "private" ? "Added by you" : "Verified by moderator",
-    confidence: 1,
+    source: input.source ?? (input.scope === "private" ? "Added by you" : "Verified by moderator"),
+    confidence: input.confidence ?? 1,
     stages: [{
       id: stageId,
       name: input.scope === "private" ? "Personal deadline" : "Deadline",
       deadline: input.deadline,
       displayDate: label,
-      status: "to-do",
+      status: input.status ?? "to-do",
       note: input.scope === "private" ? "Visible only to you." : "Verified and added by a moderator.",
     }],
   };

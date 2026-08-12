@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject, useEffect, useRef, useState } from "react";
 import { citationParts, consumeSseChunk } from "@/lib/ask-kampus/client";
 
 type ChatSource = {
@@ -42,28 +42,47 @@ function AnswerText({ content, sources = [] }: { content: string; sources?: Chat
   })}</p>;
 }
 
-export default function AskKampusDrawer({ gmailConnected }: { gmailConnected: boolean }) {
-  const [open, setOpen] = useState(false);
+export default function AskKampusDrawer({
+  open,
+  gmailConnected,
+  onClose,
+  returnFocusRef,
+}: {
+  open: boolean;
+  gmailConnected: boolean;
+  onClose: () => void;
+  returnFocusRef: RefObject<HTMLButtonElement | null>;
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [remaining, setRemaining] = useState<number | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
-  const loadingRef = useRef(false);
-  loadingRef.current = loading;
+  const abortRef = useRef<AbortController>(null);
+
+  function closeDrawer() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+    setStatus("");
+    onClose();
+  }
 
   useEffect(() => {
     if (!open) return;
     const drawer = drawerRef.current;
-    const trigger = triggerRef.current;
+    const trigger = returnFocusRef.current;
     const focusable = () => Array.from(drawer?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], textarea:not([disabled])') ?? []);
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape" && !loadingRef.current) {
-        setOpen(false);
+      if (event.key === "Escape") {
+        abortRef.current?.abort();
+        abortRef.current = null;
+        setLoading(false);
+        setStatus("");
+        onClose();
         return;
       }
       if (event.key !== "Tab") return;
@@ -85,7 +104,7 @@ export default function AskKampusDrawer({ gmailConnected }: { gmailConnected: bo
       document.removeEventListener("keydown", onKeyDown);
       trigger?.focus();
     };
-  }, [gmailConnected, open]);
+  }, [gmailConnected, onClose, open, returnFocusRef]);
 
   useEffect(() => {
     messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: "smooth" });
@@ -102,12 +121,15 @@ export default function AskKampusDrawer({ gmailConnected }: { gmailConnected: bo
     setQuestion("");
     setLoading(true);
     setStatus("Starting a private Gmail search…");
+    const abortController = new AbortController();
+    abortRef.current = abortController;
 
     try {
       const response = await fetch("/api/ask-kampus", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ question: nextQuestion, history }),
+        signal: abortController.signal,
       });
       if (!response.body) throw new Error("Ask Kampus did not return a response stream.");
       const reader = response.body.getReader();
@@ -139,9 +161,11 @@ export default function AskKampusDrawer({ gmailConnected }: { gmailConnected: bo
         }
       }
     } catch (error) {
+      if (abortController.signal.aborted) return;
       setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: error instanceof Error ? error.message : "Ask Kampus is unavailable.", error: true } : message));
       setStatus("");
     } finally {
+      if (abortRef.current === abortController) abortRef.current = null;
       setLoading(false);
       window.setTimeout(() => inputRef.current?.focus(), 0);
     }
@@ -159,14 +183,11 @@ export default function AskKampusDrawer({ gmailConnected }: { gmailConnected: bo
     }
   }
 
+  if (!open) return null;
+
   return (
-    <>
-      <button ref={triggerRef} type="button" className="ask-launcher" onClick={() => setOpen(true)} aria-haspopup="dialog">
-        <span aria-hidden="true">✦</span> Ask Kampus
-      </button>
-      {open && (
-        <div className="ask-layer">
-          <button className="ask-backdrop-dismiss" type="button" aria-label="Close Ask Kampus" onClick={() => !loading && setOpen(false)} />
+    <div className="ask-layer">
+          <button className="ask-backdrop-dismiss" type="button" aria-label="Close Ask Kampus" onClick={closeDrawer} />
           <aside ref={drawerRef} className="ask-drawer" role="dialog" aria-modal="true" aria-labelledby="ask-kampus-title">
             <header className="ask-header">
               <div>
@@ -175,13 +196,13 @@ export default function AskKampusDrawer({ gmailConnected }: { gmailConnected: bo
               </div>
               <div className="ask-header-actions">
                 {messages.length > 0 && <button type="button" onClick={() => { setMessages([]); setStatus(""); }} disabled={loading}>New chat</button>}
-                <button type="button" className="ask-close" onClick={() => setOpen(false)} disabled={loading} aria-label="Close Ask Kampus">×</button>
+                <button type="button" className="ask-close" onClick={closeDrawer} aria-label="Close Ask Kampus">×</button>
               </div>
             </header>
 
             <div className="ask-privacy-note"><span aria-hidden="true">↳</span> Searches only email received after Gmail connection. Chat is not saved.</div>
 
-            <div className="ask-messages" ref={messagesRef} aria-live="polite">
+            <div className="ask-messages" ref={messagesRef}>
               {!gmailConnected ? (
                 <div className="ask-empty">
                   <span className="ask-orb" aria-hidden="true">✦</span>
@@ -228,8 +249,6 @@ export default function AskKampusDrawer({ gmailConnected }: { gmailConnected: bo
               </form>
             )}
           </aside>
-        </div>
-      )}
-    </>
+    </div>
   );
 }
