@@ -16,6 +16,17 @@ const initialData = {
 };
 
 describe("dashboard keyboard behavior", () => {
+  it("uses a dedicated private form variant inside the expanded neutral panel", async () => {
+    const user = userEvent.setup();
+    render(<Dashboard initialData={initialData} />);
+    const toggle = screen.getByRole("button", { name: /add a private deadline/i });
+    await user.click(toggle);
+
+    const panel = toggle.closest("section");
+    const form = within(panel as HTMLElement).getByRole("button", { name: "Add private deadline" }).closest("form");
+    expect(panel).toHaveClass("is-open");
+    expect(form).toHaveClass("private-deadline-form");
+  });
   it("gives the moderator publisher its own readable form layout", async () => {
     const user = userEvent.setup();
     render(<Dashboard initialData={{ ...initialData, profile: { ...initialData.profile, role: "moderator" } }} />);
@@ -24,6 +35,16 @@ describe("dashboard keyboard behavior", () => {
     const publisher = screen.getByRole("region", { name: "Publish a verified shared deadline" });
     expect(publisher).toHaveClass("moderator-publisher");
     expect(within(publisher).getByRole("button", { name: "Publish shared deadline" }).closest("form")).toHaveClass("moderator-publish-form");
+    expect(screen.getByText("Moderator access active")).toBeInTheDocument();
+    expect(screen.queryByText("All systems nominal")).not.toBeInTheDocument();
+  });
+
+  it("describes the seven-day Gmail backfill accurately", async () => {
+    const user = userEvent.setup();
+    render(<Dashboard initialData={initialData} />);
+    await user.click(screen.getByRole("button", { name: /^Privacy & account/i }));
+    expect(screen.getByText(/up to seven days before you connect Gmail/i)).toBeInTheDocument();
+    expect(screen.queryByText(/does not import an older dashboard/i)).not.toBeInTheDocument();
   });
 
   it("keeps the date tile and title in one desktop task column", () => {
@@ -68,6 +89,30 @@ describe("dashboard keyboard behavior", () => {
     await user.keyboard("{ArrowRight}");
     expect(caseCompsTab).toHaveFocus();
     expect(caseCompsTab).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("exposes labelled 44px task and utility controls", () => {
+    render(<Dashboard initialData={{
+      ...initialData,
+      gmail: { connected: true, lastSyncAt: "2026-08-11T08:59:00.000Z", error: null },
+      agendas: [{
+        id: "agenda-target",
+        title: "Accessible target task",
+        category: "Academics",
+        detail: "Upload the PDF",
+        source: "Course office",
+        confidence: 0.95,
+        deadline: "2026-08-14T12:30:00.000Z",
+        displayDate: "14 Aug, 6:00 pm",
+        countdown: "2d",
+        urgency: "soon",
+        scope: "private",
+        stages: [{ id: "target-stage", name: "Deadline", deadline: "2026-08-14T12:30:00.000Z", displayDate: "14 Aug, 6:00 pm", status: "to-do", note: "Visible only to you." }],
+      }],
+    }} />);
+
+    expect(screen.getByRole("button", { name: "How Gmail access works" })).toHaveClass("control-target");
+    expect(screen.getByRole("button", { name: /(expand|collapse) accessible target task/i })).toHaveClass("agenda-summary");
   });
 
   it("traps focus inside a dialog and restores it to the opener", async () => {

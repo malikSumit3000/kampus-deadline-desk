@@ -10,7 +10,7 @@ export default function PrivacyView({ exportDemoData, setNotice, deleteArmed, se
     <div className="page-wrap narrow-page">
       <header className="page-heading"><div><p className="eyebrow">Your data, your call</p><h1>Privacy & account</h1><p className="lede">A plain-language view of what this pilot can—and cannot—access.</p></div></header>
       <section className="consent-card"><span className="consent-number">01</span><div><h2>Google sign-in is separate from Gmail</h2><p>Your IIMK identity permits access to the pilot. Gmail content is requested only after you explicitly choose Connect Gmail.</p></div></section>
-      <section className="consent-card"><span className="consent-number">02</span><div><h2>Read-only, new-mail-only processing</h2><p>The requested scope is <code>gmail.readonly</code>. Processing begins after your connection date; this pilot does not import an older dashboard.</p></div></section>
+      <section className="consent-card"><span className="consent-number">02</span><div><h2>Read-only deadline processing</h2><p>The requested scope is <code>gmail.readonly</code>. On first connection, Kampus may check messages received up to seven days before you connect Gmail, then continues with newer mail.</p></div></section>
       <section className="consent-card"><span className="consent-number">03</span><div><h2>Model provider processing</h2><p>Only bounded message text is sent for deadline extraction. Raw message text and attachments are not stored by Kampus; provider handling follows the API terms configured for this deployment.</p></div></section>
       <section className="account-actions">
         <div><h2>Account controls</h2><p>Export your personal state, disconnect Gmail, or sign out of this browser.</p></div>

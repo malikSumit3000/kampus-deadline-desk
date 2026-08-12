@@ -5,6 +5,8 @@ import {
   agendaAttribution,
   actionContextPreview,
   moderatorActionLabels,
+  deadlineCountdownLabel,
+  selectUpNext,
   stageProgress,
   reviewActionLabels,
 } from "../lib/dashboard/presentation.ts";
@@ -52,4 +54,24 @@ test("a newly saved manual deadline can be shown locally without a dashboard rel
   assert.equal(agenda.source, "Added by you");
   assert.equal(agenda.stages[0].id, "private:private-1");
   assert.equal(agenda.deadline, "2026-08-20T18:00:00+05:30");
+});
+
+test("expired deadlines are labelled overdue rather than zero hours left", () => {
+  const now = Date.parse("2026-08-13T10:00:00.000Z");
+  assert.equal(deadlineCountdownLabel({ deadline: "2026-08-13T09:59:59.000Z", countdown: "0h" }, now), "Overdue");
+  assert.equal(deadlineCountdownLabel({ deadline: "2026-08-14T10:00:00.000Z", countdown: "1d" }, now), "1d left");
+  assert.equal(deadlineCountdownLabel({ deadline: "2026-08-14T10:00:00.000Z", countdown: "1d left" }, now), "1d left");
+});
+
+test("up next selects the closest future incomplete deadline", () => {
+  const now = Date.parse("2026-08-13T10:00:00.000Z");
+  const agendas = [
+    { id: "expired", deadline: "2026-08-12T10:00:00.000Z", stages: [{ id: "expired-stage", status: "to-do" }] },
+    { id: "future-complete", deadline: "2026-08-14T10:00:00.000Z", stages: [{ id: "complete-stage", status: "submitted" }] },
+    { id: "later", deadline: "2026-08-16T10:00:00.000Z", stages: [{ id: "later-stage", status: "to-do" }] },
+    { id: "next", deadline: "2026-08-15T10:00:00.000Z", stages: [{ id: "next-stage", status: "to-do" }] },
+  ];
+
+  assert.equal(selectUpNext(agendas, { "later-stage": "in progress" }, now)?.id, "next");
+  assert.equal(selectUpNext(agendas.slice(0, 2), {}, now), null);
 });
