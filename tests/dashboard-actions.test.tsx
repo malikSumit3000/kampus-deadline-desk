@@ -39,6 +39,10 @@ function data(agendas = [privateAgenda]) {
   };
 }
 
+function connectedData(agendas = [privateAgenda]) {
+  return { ...data(agendas), gmail: { connected: true, lastSyncAt: new Date().toISOString(), error: null } };
+}
+
 const review = {
   id: "review-1",
   kind: "Needs review · 91%",
@@ -126,5 +130,25 @@ describe("dashboard local actions", () => {
     render(<Dashboard initialData={{ ...data([]), reviews: [{ ...review, canAddToDashboard: false, proposedDate: "No deadline extracted" }] }} />);
     await user.click(screen.getByRole("button", { name: /^Review inbox/i }));
     expect(screen.getByRole("button", { name: "Mark reviewed" })).toBeDisabled();
+  });
+
+  it("continues Gmail batches until Claude has inspected the full window", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        scanned: 10, candidates: 1, failed: 0, hasMore: true,
+        lastSyncAt: "2026-08-13T00:00:00.000Z", privateAgendas: [], reviews: [],
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        scanned: 4, candidates: 0, failed: 0, hasMore: false,
+        lastSyncAt: "2026-08-13T00:01:00.000Z", privateAgendas: [], reviews: [],
+      }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<Dashboard initialData={connectedData([])} />);
+
+    await user.click(screen.getByRole("button", { name: "Refresh inbox" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("14 messages scanned");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

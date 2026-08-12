@@ -16,7 +16,7 @@ export function initialGmailScanAfter(connectedAt: string) {
 
 export function shouldCompleteBackfill(candidateIds: string[], receipts: Receipt[], processedIds: string[]) {
   const completed = new Set([
-    ...receipts.filter((receipt) => receipt.processing_status === "succeeded" || receipt.attempt_count >= 2).map((receipt) => receipt.message_id),
+    ...receipts.filter((receipt) => receipt.processing_status === "succeeded" || receipt.attempt_count >= 5).map((receipt) => receipt.message_id),
     ...processedIds,
   ]);
   return [...new Set(candidateIds)].every((id) => completed.has(id));

@@ -53,3 +53,9 @@ export function normaliseDeadlineExtraction(value: unknown): DeadlineExtraction 
   return parsed.data;
 }
 
+export function normaliseDeadlineExtractions(value: unknown): DeadlineExtraction[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("model_output_invalid");
+  const tasks = (value as Record<string, unknown>).tasks;
+  if (!Array.isArray(tasks) || tasks.length > 12) throw new Error("model_output_invalid");
+  return tasks.map(normaliseDeadlineExtraction);
+}

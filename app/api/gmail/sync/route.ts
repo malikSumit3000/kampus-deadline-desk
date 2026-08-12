@@ -7,7 +7,7 @@ import { classifySyncFailure } from "@/lib/extraction/errors";
 import { routeExtraction } from "@/lib/extraction/policy";
 import { shouldCompleteBackfill } from "@/lib/gmail/backfill";
 import { getGmailMessage, isSensitiveMessage, listCandidateMessageIds, refreshGoogleAccessToken, selectSyncCandidates, summariseMessage } from "@/lib/gmail/client";
-import { classifyShortlistDeadline } from "@/lib/gmail/shortlist";
+import { processMessagesIndependently } from "@/lib/gmail/process-batch";
 import { parseSyncLease } from "@/lib/reliability/rpc-contracts";
 import { logOperationalEvent } from "@/lib/observability/events";
 import { decryptToken } from "@/lib/security/token-crypto";
@@ -15,12 +15,6 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
-
-function dateLabel(value: string) {
-  return new Intl.DateTimeFormat("en-IN", {
-    timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit",
-  }).format(new Date(value));
-}
 
 export async function POST() {
   const requestStartedAt = Date.now();
@@ -62,7 +56,7 @@ export async function POST() {
     if (receiptsError) throw new Error("gmail_receipts_lookup_failed");
     const ids = selectSyncCandidates(candidateIds, receipts ?? []);
 
-    for (const id of ids) {
+    const failures = await processMessagesIndependently(ids, async (id) => {
       const message = await getGmailMessage(id, accessToken);
       const summary = summariseMessage(message);
       const { data: claimed, error: claimError } = await admin.rpc("claim_gmail_message", {
@@ -72,124 +66,34 @@ export async function POST() {
         p_internal_date: summary.receivedAt,
       });
       if (claimError) throw new Error("gmail_message_claim_failed");
-      if (claimed !== true) continue;
+      if (claimed !== true) return;
 
       scanned += 1;
       let outcome = "ignored";
       try {
-        const shortlist = classifyShortlistDeadline(summary);
-        if (shortlist.kind === "deadline") {
-          const { data: agenda, error: agendaError } = await admin.from("private_agendas").insert({
-            user_id: user.id,
-            title: "Shortlist action deadline",
-            category: "Placements",
-            detail: "Open the original email for the action instructions.",
-            source_label: "Gmail · sensitive details withheld",
-            confidence: 1,
-            deadline: shortlist.deadline,
-          }).select("id,title,category,detail,source_label,confidence,deadline,status").single();
-          if (agendaError || !agenda) throw new Error("private_agenda_insert_failed");
-          privateAgendas.push(makeManualAgenda({
-            id: agenda.id,
-            title: agenda.title,
-            category: agenda.category,
-            detail: agenda.detail,
-            deadline: agenda.deadline,
-            scope: "private",
-            source: agenda.source_label,
-            confidence: Number(agenda.confidence),
-            status: agenda.status,
-          }));
-          outcome = "private";
-          candidates += 1;
-        } else if (shortlist.kind === "review") {
-          const reason = "This shortlist message contains an action date but no exact time. Open Gmail to verify the deadline.";
-          const { data: review, error: reviewError } = await admin.from("review_items").insert({
-            user_id: user.id,
-            kind: "Date needs review",
-            title: "Shortlist action deadline",
-            reason,
-            gmail_message_id: id,
-            received_at: summary.receivedAt,
-          }).select("id,kind,title,reason,proposed_deadline,received_at,gmail_message_id").single();
-          if (reviewError || !review) throw new Error("review_item_insert_failed");
-          newReviews.push({
-            id: review.id,
-            kind: review.kind,
-            title: review.title,
-            received: dateLabel(review.received_at),
-            reason: review.reason,
-            proposedDate: "Time not stated",
-            source: "Open in Gmail",
-            canAddToDashboard: false,
-          });
-          outcome = "review";
-          candidates += 1;
-        } else if (shortlist.kind === "ignore") {
+        if (isSensitiveMessage(summary)) {
           outcome = "ignored_sensitive";
-        } else if (isSensitiveMessage(summary)) {
-          const reason = "Potentially sensitive roster or personal document; model extraction was bypassed.";
-          const { data: review, error: reviewError } = await admin.from("review_items").insert({
-            user_id: user.id,
-            kind: "Sensitive message",
-            title: summary.subject,
-            reason,
-            gmail_message_id: id,
-            received_at: summary.receivedAt,
-          }).select("id,kind,title,reason,proposed_deadline,received_at,gmail_message_id").single();
-          if (reviewError || !review) throw new Error("review_item_insert_failed");
-          newReviews.push({
-            id: review.id,
-            kind: review.kind,
-            title: review.title,
-            received: dateLabel(review.received_at),
-            reason: review.reason,
-            proposedDate: "No deadline extracted",
-            source: "Open in Gmail",
-            canAddToDashboard: false,
-          });
-          outcome = "review";
-          candidates += 1;
         } else {
-          const extraction = await extractDeadline(summary);
-          const route = routeExtraction(extraction);
-          outcome = route;
-          if (route !== "ignore") candidates += 1;
+          const extractions = await extractDeadline(summary);
+          const datedExtractions = extractions.filter((extraction) => routeExtraction(extraction) === "private" && extraction.deadline);
+          outcome = datedExtractions.length > 0 ? "private" : "ignored";
+          candidates += datedExtractions.length;
 
-          if (route === "review") {
-            const reason = extraction.evidence || "The extracted deadline is not safe to add automatically.";
-            const { data: review, error: reviewError } = await admin.from("review_items").insert({
+          for (const [taskIndex, extraction] of datedExtractions.entries()) {
+            const { data: agenda, error: agendaError } = await admin.from("private_agendas").upsert({
               user_id: user.id,
-              kind: `Needs review · ${Math.round(extraction.confidence * 100)}%`,
-              title: extraction.title,
-              reason,
-              proposed_deadline: extraction.deadline,
               gmail_message_id: id,
-              extraction,
-              received_at: summary.receivedAt,
-            }).select("id,kind,title,reason,proposed_deadline,received_at,gmail_message_id").single();
-            if (reviewError || !review) throw new Error("review_item_insert_failed");
-            newReviews.push({
-              id: review.id,
-              kind: review.kind,
-              title: review.title,
-              received: dateLabel(review.received_at),
-              reason: review.reason,
-              proposedDate: review.proposed_deadline ? dateLabel(review.proposed_deadline) : "No deadline extracted",
-              source: "Open in Gmail",
-              canAddToDashboard: Boolean(review.proposed_deadline),
-            });
-          } else if (route === "private" && extraction.deadline) {
-            const { data: agenda, error: agendaError } = await admin.from("private_agendas").insert({
-              user_id: user.id,
+              gmail_task_index: taskIndex,
               title: extraction.title,
               category: extraction.category,
               detail: extraction.detail,
               source_label: summary.sender,
               confidence: extraction.confidence,
               deadline: extraction.deadline,
-            }).select("id,title,category,detail,source_label,confidence,deadline,status").single();
-            if (agendaError || !agenda) throw new Error("private_agenda_insert_failed");
+            }, { onConflict: "user_id,gmail_message_id,gmail_task_index", ignoreDuplicates: true })
+              .select("id,title,category,detail,source_label,confidence,deadline,status").maybeSingle();
+            if (agendaError) throw new Error("private_agenda_insert_failed");
+            if (!agenda) continue;
             privateAgendas.push(makeManualAgenda({
               id: agenda.id,
               title: agenda.title,
@@ -222,19 +126,19 @@ export async function POST() {
         }).eq("user_id", user.id).eq("message_id", id);
         throw error;
       }
-    }
+    });
 
     const now = new Date().toISOString();
-    const backfillComplete = !connection.backfill_completed_at && shouldCompleteBackfill(candidateIds, receipts ?? [], processedIds);
-    const connectionUpdate = backfillComplete
-      ? { last_sync_at: now, last_error: null, scan_after: syncStartedAt, backfill_completed_at: now, updated_at: now }
+    const windowComplete = shouldCompleteBackfill(candidateIds, receipts ?? [], processedIds);
+    const connectionUpdate = windowComplete
+      ? { last_sync_at: now, last_error: null, scan_after: syncStartedAt, backfill_completed_at: connection.backfill_completed_at ?? now, updated_at: now }
       : { last_sync_at: now, last_error: null, updated_at: now };
     await Promise.all([
       admin.from("sync_runs").update({ status: "succeeded", finished_at: now, messages_scanned: scanned, candidates_found: candidates }).eq("id", lease.runId),
       admin.from("gmail_connections").update(connectionUpdate).eq("user_id", user.id),
     ]);
     logOperationalEvent({ operation: "gmail_sync", status: "succeeded", durationMs: Date.now() - requestStartedAt, messagesProcessed: scanned, candidatesFound: candidates });
-    return NextResponse.json({ scanned, candidates, lastSyncAt: now, privateAgendas, reviews: newReviews });
+    return NextResponse.json({ scanned, candidates, failed: failures.length, hasMore: !windowComplete && scanned > 0, lastSyncAt: now, privateAgendas, reviews: newReviews });
   } catch (error) {
     const failure = classifySyncFailure(error);
     const now = new Date().toISOString();

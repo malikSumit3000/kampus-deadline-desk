@@ -40,8 +40,7 @@ async function gmailFetch<T>(path: string, accessToken: string): Promise<T> {
 }
 
 export async function listCandidateMessageIds(accessToken: string, scanAfter: string) {
-  const after = Math.floor(new Date(scanAfter).getTime() / 1000);
-  const q = `after:${after} {deadline "due by" submit registration shortlist extension "last date"}`;
+  const q = gmailWindowQuery(scanAfter);
   const ids: string[] = [];
   let pageToken: string | undefined;
   for (let page = 0; page < 10; page += 1) {
@@ -53,6 +52,12 @@ export async function listCandidateMessageIds(accessToken: string, scanAfter: st
     if (!pageToken) break;
   }
   return [...new Set(ids)];
+}
+
+export function gmailWindowQuery(scanAfter: string) {
+  const after = Math.floor(new Date(scanAfter).getTime() / 1000);
+  if (!Number.isFinite(after)) throw new Error("invalid_scan_boundary");
+  return `after:${after}`;
 }
 
 export function limitSyncCandidates(ids: string[], limit = 10) {
@@ -72,7 +77,7 @@ export function selectSyncCandidates(ids: string[], receipts: MessageReceipt[], 
   return limitSyncCandidates(ids.filter((id) => {
     const receipt = byMessageId.get(id);
     if (!receipt) return true;
-    if (receipt.attempt_count >= 2 || receipt.processing_status === "succeeded") return false;
+    if (receipt.attempt_count >= 5 || receipt.processing_status === "succeeded") return false;
     if (receipt.processing_status === "failed") return true;
     return new Date(receipt.updated_at).getTime() < staleBefore;
   }));

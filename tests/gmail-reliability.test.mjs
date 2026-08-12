@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { initialGmailScanAfter, shouldCompleteBackfill } from "../lib/gmail/backfill.ts";
 import { classifyShortlistDeadline } from "../lib/gmail/shortlist.ts";
-import { isSensitiveMessage, limitSyncCandidates, selectSyncCandidates } from "../lib/gmail/client.ts";
+import { gmailWindowQuery, isSensitiveMessage, limitSyncCandidates, selectSyncCandidates } from "../lib/gmail/client.ts";
+import { processMessagesIndependently } from "../lib/gmail/process-batch.ts";
 import { mergeSyncResult } from "../lib/dashboard/sync.ts";
 import { makeManualAgenda } from "../lib/dashboard/optimistic.ts";
 
@@ -22,6 +23,37 @@ test("limits an extraction sync to ten unique candidate messages", () => {
   assert.deepEqual(limitSyncCandidates(ids), ids.slice(0, 10));
 });
 
+test("lists every message after the scan boundary without keyword filtering", () => {
+  assert.equal(
+    gmailWindowQuery("2026-08-11T00:00:00.000Z"),
+    "after:1786406400",
+  );
+});
+
+test("one failed message does not prevent Claude processing later messages", async () => {
+  const visited = [];
+  const failures = await processMessagesIndependently(["one", "two", "three"], async (id) => {
+    visited.push(id);
+    if (id === "two") throw new Error("model_output_invalid");
+  });
+
+  assert.deepEqual(visited, ["one", "two", "three"]);
+  assert.deepEqual(failures, [{ item: "two", error: "model_output_invalid" }]);
+});
+
+test("processes Gmail messages with at most two Claude calls at once", async () => {
+  let active = 0;
+  let maximumActive = 0;
+  await processMessagesIndependently(["one", "two", "three", "four"], async () => {
+    active += 1;
+    maximumActive = Math.max(maximumActive, active);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    active -= 1;
+  }, 2);
+
+  assert.equal(maximumActive, 2);
+});
+
 test("selects ten unprocessed or retryable messages instead of ten recent receipts", () => {
   const ids = Array.from({ length: 19 }, (_, index) => `m-${index}`);
   const receipts = [
@@ -33,7 +65,7 @@ test("selects ten unprocessed or retryable messages instead of ten recent receip
     })),
     { message_id: "m-10", processing_status: "processing", attempt_count: 1, updated_at: "2026-08-11T08:40:00.000Z" },
     { message_id: "m-11", processing_status: "failed", attempt_count: 1, updated_at: "2026-08-11T09:00:00.000Z" },
-    { message_id: "m-12", processing_status: "failed", attempt_count: 2, updated_at: "2026-08-11T09:00:00.000Z" },
+    { message_id: "m-12", processing_status: "failed", attempt_count: 5, updated_at: "2026-08-11T09:00:00.000Z" },
     { message_id: "m-13", processing_status: "processing", attempt_count: 1, updated_at: "2026-08-11T08:55:00.000Z" },
   ];
 
@@ -61,6 +93,21 @@ test("completes backfill only when no eligible candidate remains after this batc
     attempt_count: 1,
     updated_at: "2026-08-12T10:00:00.000Z",
   }], tenIds), true);
+});
+
+test("retries a failed Claude message up to five attempts", () => {
+  const ids = ["failed-four-times", "failed-five-times"];
+  assert.deepEqual(selectSyncCandidates(ids, [
+    { message_id: ids[0], processing_status: "failed", attempt_count: 4, updated_at: "2026-08-12T10:00:00.000Z" },
+    { message_id: ids[1], processing_status: "failed", attempt_count: 5, updated_at: "2026-08-12T10:00:00.000Z" },
+  ]), [ids[0]]);
+});
+
+test("only treats a failed message as resolved after five attempts", () => {
+  const id = "message-1";
+  const receipt = (attempt_count) => ({ message_id: id, processing_status: "failed", attempt_count, updated_at: "2026-08-12T10:00:00.000Z" });
+  assert.equal(shouldCompleteBackfill([id], [receipt(4)], []), false);
+  assert.equal(shouldCompleteBackfill([id], [receipt(5)], []), true);
 });
 
 test("extracts an explicit shortlist action date locally without retaining sensitive text", () => {

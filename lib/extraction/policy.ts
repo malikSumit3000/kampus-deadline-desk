@@ -3,15 +3,13 @@ export type ExtractionPolicyInput = {
   sensitive: boolean;
   scope: "shared" | "private" | "uncertain";
   confidence: number;
+  deadline?: string | null;
 };
 
 export type ExtractionRoute = "ignore" | "review" | "private";
 
 export function routeExtraction(input: ExtractionPolicyInput): ExtractionRoute {
-  if (!input.relevant) return "ignore";
-  if (input.sensitive || input.scope === "uncertain" || input.confidence < 0.9) {
-    return "review";
-  }
-  if (input.scope === "shared" && input.confidence < 0.95) return "review";
+  if (!input.relevant || !input.deadline) return "ignore";
+  if (input.sensitive) return "review";
   return "private";
 }

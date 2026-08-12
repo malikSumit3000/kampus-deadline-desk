@@ -114,17 +114,32 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
     }
     if (syncing) return;
     setSyncing(true);
-    setNotice("Checking new messages received after connection…");
+    setNotice("Claude is reading messages in your Gmail window…");
     try {
-      const response = await fetch("/api/gmail/sync", { method: "POST" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Sync failed");
-      applySyncDelta({
-        privateAgendas: result.privateAgendas ?? [],
-        reviews: result.reviews ?? [],
-        lastSyncAt: result.lastSyncAt,
-      });
-      setNotice(`Inbox checked: ${result.scanned} messages scanned, ${result.candidates} possible deadlines found.`);
+      let totalScanned = 0;
+      let totalCandidates = 0;
+      let totalFailed = 0;
+      let hasMore = true;
+      let batches = 0;
+      while (hasMore && batches < 50) {
+        const response = await fetch("/api/gmail/sync", { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error ?? "Sync failed");
+        applySyncDelta({
+          privateAgendas: result.privateAgendas ?? [],
+          reviews: result.reviews ?? [],
+          lastSyncAt: result.lastSyncAt,
+        });
+        totalScanned += Number(result.scanned ?? 0);
+        totalCandidates += Number(result.candidates ?? 0);
+        totalFailed += Number(result.failed ?? 0);
+        hasMore = result.hasMore === true;
+        batches += 1;
+        if (hasMore) setNotice(`Claude has read ${totalScanned} messages. Continuing…`);
+      }
+      if (hasMore) throw new Error("Claude paused after 500 messages. Refresh again to continue.");
+      const retryNote = totalFailed > 0 ? ` ${totalFailed} messages will be retried.` : "";
+      setNotice(`Inbox checked: ${totalScanned} messages scanned, ${totalCandidates} deadlines added.${retryNote}`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Sync failed");
     } finally {
