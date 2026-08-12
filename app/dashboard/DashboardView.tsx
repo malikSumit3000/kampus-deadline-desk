@@ -75,8 +75,7 @@ export default function DashboardView(props: DashboardViewProps) {
           const isOpen = expanded.includes(agenda.id); const status = taskStatus(agenda); const tile = dateTile(agenda.deadline);
           return <article className={`agenda-card scope-${agenda.scope}`} key={agenda.id}>
             <button className="agenda-summary" onClick={() => toggleAgenda(agenda.id)} aria-expanded={isOpen}>
-              <span className={`urgency urgency-${agenda.urgency}`}><small>{tile.month}</small><strong>{tile.day}</strong></span>
-              <span className="agenda-main"><strong className="agenda-title">{agenda.title}</strong><small className="mobile-deadline">{dateParts(agenda.deadline)}</small></span>
+              <span className="agenda-task-cell"><span className={`urgency urgency-${agenda.urgency}`}><small>{tile.month}</small><strong>{tile.day}</strong></span><span className="agenda-main"><strong className="agenda-title">{agenda.title}</strong><small className="mobile-deadline">{dateParts(agenda.deadline)}</small></span></span>
               <span className="agenda-deadline">{dateParts(agenda.deadline)}</span><span className="agenda-context">{agenda.detail || "View task details"}</span>
               <span className={`category-pill ${categoryTone(agenda.category)}`}>{agenda.category}</span><span className="agenda-source">{agenda.source}</span>
               <span className={`agenda-status ${status.tone}`}><i aria-hidden="true" />{status.label}</span><span className="expand-mark" aria-hidden="true">{isOpen ? "−" : "›"}</span>

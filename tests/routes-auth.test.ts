@@ -18,6 +18,7 @@ import { DELETE as deleteAgenda } from "../app/api/agendas/[id]/route";
 import { POST as askKampus } from "../app/api/ask-kampus/route";
 import { POST as syncGmail } from "../app/api/gmail/sync/route";
 import { PATCH as resolveProposal } from "../app/api/moderator/proposals/[id]/route";
+import { PATCH as resolveReview } from "../app/api/reviews/[id]/route";
 
 function unauthenticatedClient() {
   return { auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) } };
@@ -43,14 +44,14 @@ describe("route authorization boundaries", () => {
     mocks.createServerClient.mockResolvedValue(unauthenticatedClient());
   });
 
-  it("rejects unauthenticated Ask Kampus requests before creating an admin client", async () => {
-    const response = await askKampus(new Request("http://localhost/api/ask-kampus", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ question: "What is due?", history: [] }),
-    }));
+  it("returns a stable Ask Kampus unavailable response without accessing user data", async () => {
+    const response = await askKampus();
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(410);
+    expect(await response.json()).toEqual({
+      code: "ask_kampus_unavailable",
+      error: "Ask Kampus is coming soon.",
+    });
     expect(mocks.createAdminClient).not.toHaveBeenCalled();
   });
 
@@ -72,49 +73,51 @@ describe("route authorization boundaries", () => {
     expect(mocks.createAdminClient).not.toHaveBeenCalled();
   });
 
-  it("returns a stable disconnected error without consuming Ask Kampus allowance", async () => {
-    mocks.createServerClient.mockResolvedValue(authenticatedClient());
-    const rpc = vi.fn();
-    mocks.createAdminClient.mockReturnValue({
-      from: vi.fn().mockReturnValue(connectionQuery(null)),
-      rpc,
-    });
-
-    const response = await askKampus(new Request("http://localhost/api/ask-kampus", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ question: "What is due?", history: [] }),
-    }));
-
-    expect(response.status).toBe(409);
-    expect(await response.text()).toContain("gmail_not_connected");
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it("enforces the atomic Ask Kampus allowance before any AI or Gmail work", async () => {
+  it("resolves a review atomically and returns the created private agenda", async () => {
     mocks.createServerClient.mockResolvedValue(authenticatedClient());
     const rpc = vi.fn().mockResolvedValue({
-      data: [{ allowed: false, audit_id: null, used: 10, remaining: 0 }],
+      data: {
+        status: "approved",
+        agenda: {
+          id: "private-3",
+          title: "Marketing submission",
+          category: "Academics",
+          detail: "Upload the PDF",
+          source_label: "Gmail review",
+          confidence: 0.91,
+          deadline: "2026-08-20T12:30:00.000Z",
+          status: "to-do",
+        },
+      },
       error: null,
     });
-    mocks.createAdminClient.mockReturnValue({
-      from: vi.fn().mockReturnValue(connectionQuery({
-        google_email: "student@iimk.ac.in",
-        encrypted_refresh_token: "unused",
-        scan_after: "2026-08-11T00:00:00.000Z",
-      })),
-      rpc,
-    });
+    mocks.createAdminClient.mockReturnValue({ rpc });
 
-    const response = await askKampus(new Request("http://localhost/api/ask-kampus", {
-      method: "POST",
+    const response = await resolveReview(new Request("http://localhost/api/reviews/review-1", {
+      method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ question: "What is due?", history: [] }),
-    }));
+      body: JSON.stringify({ action: "approve" }),
+    }), { params: Promise.resolve({ id: "review-1" }) });
 
-    expect(response.status).toBe(429);
-    expect(await response.text()).toContain("daily_limit");
-    expect(rpc).toHaveBeenCalledOnce();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, status: "approved", agenda: { id: "private-3" } });
+    expect(rpc).toHaveBeenCalledWith("resolve_review_item", {
+      p_actor_id: "user-1",
+      p_review_id: "review-1",
+      p_action: "approve",
+    });
+  });
+
+  it("rejects legacy review labels before authentication or database access", async () => {
+    const response = await resolveReview(new Request("http://localhost/api/reviews/review-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "Approved" }),
+    }), { params: Promise.resolve({ id: "review-1" }) });
+
+    expect(response.status).toBe(400);
+    expect(mocks.createServerClient).not.toHaveBeenCalled();
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
   });
 
   it("returns a conflict when the Gmail sync lease is already held", async () => {

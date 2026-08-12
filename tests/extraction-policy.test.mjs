@@ -5,8 +5,12 @@ import { routeExtraction } from "../lib/extraction/policy.ts";
 
 const base = { relevant: true, sensitive: false, scope: "shared", confidence: 0.96 };
 
-test("routes high-confidence shared facts to moderator approval", () => {
-  assert.equal(routeExtraction(base), "moderator");
+test("keeps high-confidence shared discoveries private to the connected student", () => {
+  assert.equal(routeExtraction(base), "private");
+});
+
+test("keeps lower-confidence shared discoveries in review", () => {
+  assert.equal(routeExtraction({ ...base, confidence: 0.94 }), "review");
 });
 
 test("never automatically shares sensitive or uncertain content", () => {
@@ -22,4 +26,3 @@ test("keeps high-confidence personal facts private", () => {
 test("ignores irrelevant mail", () => {
   assert.equal(routeExtraction({ ...base, relevant: false }), "ignore");
 });
-

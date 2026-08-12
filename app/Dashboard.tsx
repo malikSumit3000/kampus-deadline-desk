@@ -132,11 +132,13 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
     }
   }
 
-  async function resolveReview(id: string, action: string) {
+  async function resolveReview(id: string, action: "approve" | "correct" | "dismiss") {
     const response = await fetch(`/api/reviews/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
-    if (!response.ok) return setNotice("That review decision could not be saved.");
+    const result = await response.json();
+    if (!response.ok) return setNotice(result.error ?? "That review decision could not be saved.");
+    if (result.agenda) insertAgenda(makeManualAgenda({ ...result.agenda, scope: "private" }));
     setReviews((current) => current.filter((item) => item.id !== id));
-    setNotice(`${action}. Your decision was saved.`);
+    setNotice(action === "approve" ? "Deadline added to your dashboard." : action === "correct" ? "Correction noted." : "Review dismissed.");
   }
 
   async function resolveProposal(id: string, action: ModeratorDecision) {
@@ -438,7 +440,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
           onCreateCategory={createPersonalCategory}
           onDelete={deleteAgenda}
         />
-        <AskKampusLauncher gmailConnected={initialData.gmail.connected} />
+        <AskKampusLauncher />
       </main>
     </div>
   );

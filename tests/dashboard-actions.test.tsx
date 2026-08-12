@@ -39,6 +39,17 @@ function data(agendas = [privateAgenda]) {
   };
 }
 
+const review = {
+  id: "review-1",
+  kind: "Needs review · 91%",
+  title: "Marketing submission",
+  received: "12 Aug, 3:30 PM",
+  reason: "Deadline wording needs confirmation.",
+  proposedDate: "20 Aug, 6:00 PM",
+  source: "Open in Gmail",
+  canAddToDashboard: true,
+};
+
 describe("dashboard local actions", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -81,5 +92,39 @@ describe("dashboard local actions", () => {
 
     expect(screen.queryByText("Existing task")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Task deleted");
+  });
+
+  it("adds an approved review to the dashboard without a reload", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      status: "approved",
+      agenda: {
+        id: "private-3",
+        title: "Marketing submission",
+        category: "Academics",
+        detail: "Upload the PDF",
+        source: "Gmail review",
+        confidence: 0.91,
+        deadline: "2026-08-20T12:30:00.000Z",
+        status: "to-do",
+      },
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    const user = userEvent.setup();
+    render(<Dashboard initialData={{ ...data([]), reviews: [review] }} />);
+
+    await user.click(screen.getByRole("button", { name: /^Review inbox/i }));
+    await user.click(screen.getByRole("button", { name: "Mark reviewed" }));
+    expect(screen.queryByText("Marketing submission")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("added to your dashboard");
+
+    await user.click(screen.getByRole("button", { name: /^Deadline runway/i }));
+    expect((await screen.findAllByText("Marketing submission")).length).toBeGreaterThan(0);
+  });
+
+  it("does not offer dashboard approval when a review has no extracted deadline", async () => {
+    const user = userEvent.setup();
+    render(<Dashboard initialData={{ ...data([]), reviews: [{ ...review, canAddToDashboard: false, proposedDate: "No deadline extracted" }] }} />);
+    await user.click(screen.getByRole("button", { name: /^Review inbox/i }));
+    expect(screen.getByRole("button", { name: "Mark reviewed" })).toBeDisabled();
   });
 });

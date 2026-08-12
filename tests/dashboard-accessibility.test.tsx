@@ -16,6 +16,33 @@ const initialData = {
 };
 
 describe("dashboard keyboard behavior", () => {
+  it("keeps the date tile and title in one desktop task column", () => {
+    render(<Dashboard initialData={{
+      ...initialData,
+      agendas: [{
+        id: "agenda-1",
+        title: "Marketing assignment",
+        category: "Academics",
+        detail: "Upload the PDF",
+        source: "Course office",
+        confidence: 0.95,
+        deadline: "2026-08-14T12:30:00.000Z",
+        displayDate: "14 Aug, 6:00 pm",
+        countdown: "2d left",
+        urgency: "soon",
+        scope: "private",
+        stages: [{ id: "private:agenda-1", name: "Personal deadline", deadline: "2026-08-14T12:30:00.000Z", displayDate: "14 Aug, 6:00 pm", status: "to-do", note: "Visible only to you." }],
+      }],
+    }} />);
+
+    const summary = screen.getByRole("button", { name: /marketing assignment/i });
+    const taskCell = summary.querySelector(".agenda-task-cell");
+    expect(taskCell).not.toBeNull();
+    expect(taskCell).toContainElement(summary.querySelector(".urgency"));
+    expect(taskCell).toContainElement(summary.querySelector(".agenda-main"));
+    expect(summary.children).toHaveLength(7);
+  });
+
   it("links category tabs to their panel and supports arrow-key selection", async () => {
     const user = userEvent.setup();
     render(<Dashboard initialData={initialData} />);

@@ -1,17 +1,24 @@
 import { NextResponse } from "next/server";
+import { parseReviewDecision, parseReviewResolution } from "@/lib/reliability/rpc-contracts";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-
-const actionStatus: Record<string, string> = { Approved: "approved", "Correction saved": "corrected", Dismissed: "dismissed" };
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { action } = (await request.json()) as { action?: string };
-  const status = action ? actionStatus[action] : null;
-  if (!status) return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+  const decision = parseReviewDecision(action);
+  if (!decision) return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   const { id } = await params;
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { error } = await supabase.from("review_items").update({ status, resolved_at: new Date().toISOString() }).eq("id", id).eq("user_id", user.id);
-  return error ? NextResponse.json({ error: "Save failed" }, { status: 400 }) : NextResponse.json({ ok: true });
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin.rpc("resolve_review_item", {
+    p_actor_id: user.id,
+    p_review_id: id,
+    p_action: decision,
+  });
+  const result = parseReviewResolution(data);
+  return error || !result
+    ? NextResponse.json({ error: "The review could not be resolved." }, { status: 409 })
+    : NextResponse.json({ ok: true, ...result });
 }
-

@@ -6,7 +6,7 @@ import EmptyState from "./EmptyState";
 
 export default function ReviewView({ reviews, resolveReview }: {
   reviews: ReviewItem[];
-  resolveReview: (id: string, action: string) => void;
+  resolveReview: (id: string, action: "approve" | "correct" | "dismiss") => void;
 }) {
   return (
     <div className="page-wrap narrow-page">
@@ -22,9 +22,9 @@ export default function ReviewView({ reviews, resolveReview }: {
             <div className="review-meta"><span className="status-chip warning">{item.kind}</span><small>{item.received}</small></div>
             <h2>{item.title}</h2><p>{item.reason}</p><div className="proposed-date">{item.proposedDate}</div>
             <div className="action-row">
-              <button className="button primary" onClick={() => resolveReview(item.id, "Approved")}>{reviewActionLabels[0]}</button>
-              <button className="button secondary" onClick={() => resolveReview(item.id, "Correction saved")}>{reviewActionLabels[1]}</button>
-              <button className="button ghost" onClick={() => resolveReview(item.id, "Dismissed")}>{reviewActionLabels[2]}</button>
+              <button className="button primary" disabled={!item.canAddToDashboard} title={item.canAddToDashboard ? undefined : "No complete deadline was extracted"} onClick={() => resolveReview(item.id, "approve")}>{reviewActionLabels[0]}</button>
+              <button className="button secondary" onClick={() => resolveReview(item.id, "correct")}>{reviewActionLabels[1]}</button>
+              <button className="button ghost" onClick={() => resolveReview(item.id, "dismiss")}>{reviewActionLabels[2]}</button>
               <a className="text-link" href="https://mail.google.com/" target="_blank" rel="noreferrer">{item.source} ↗</a>
             </div>
           </article>

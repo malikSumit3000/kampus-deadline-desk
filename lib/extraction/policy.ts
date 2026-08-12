@@ -5,14 +5,13 @@ export type ExtractionPolicyInput = {
   confidence: number;
 };
 
-export type ExtractionRoute = "ignore" | "review" | "private" | "moderator";
+export type ExtractionRoute = "ignore" | "review" | "private";
 
 export function routeExtraction(input: ExtractionPolicyInput): ExtractionRoute {
   if (!input.relevant) return "ignore";
   if (input.sensitive || input.scope === "uncertain" || input.confidence < 0.9) {
     return "review";
   }
-  if (input.scope === "private") return "private";
-  return input.confidence >= 0.95 ? "moderator" : "review";
+  if (input.scope === "shared" && input.confidence < 0.95) return "review";
+  return "private";
 }
-

@@ -27,3 +27,48 @@ export type ModeratorDecision = "approve" | "private" | "reject";
 export function parseModeratorDecision(value: unknown): ModeratorDecision | null {
   return value === "approve" || value === "private" || value === "reject" ? value : null;
 }
+
+export type ReviewDecision = "approve" | "correct" | "dismiss";
+
+export function parseReviewDecision(value: unknown): ReviewDecision | null {
+  return value === "approve" || value === "correct" || value === "dismiss" ? value : null;
+}
+
+type ReviewAgenda = {
+  id: string;
+  title: string;
+  category: string;
+  detail: string;
+  source: string;
+  confidence: number;
+  deadline: string;
+  status: "to-do" | "in progress" | "submitted";
+};
+
+export function parseReviewResolution(value: unknown): { status: "approved" | "corrected" | "dismissed"; agenda: ReviewAgenda | null } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (row.status !== "approved" && row.status !== "corrected" && row.status !== "dismissed") return null;
+  if (row.status !== "approved") return row.agenda === null ? { status: row.status, agenda: null } : null;
+  if (!row.agenda || typeof row.agenda !== "object" || Array.isArray(row.agenda)) return null;
+  const agenda = row.agenda as Record<string, unknown>;
+  if (
+    typeof agenda.id !== "string" || typeof agenda.title !== "string" || typeof agenda.category !== "string"
+    || typeof agenda.detail !== "string" || typeof agenda.source_label !== "string"
+    || typeof agenda.confidence !== "number" || typeof agenda.deadline !== "string"
+    || (agenda.status !== "to-do" && agenda.status !== "in progress" && agenda.status !== "submitted")
+  ) return null;
+  return {
+    status: row.status,
+    agenda: {
+      id: agenda.id,
+      title: agenda.title,
+      category: agenda.category,
+      detail: agenda.detail,
+      source: agenda.source_label,
+      confidence: agenda.confidence,
+      deadline: agenda.deadline,
+      status: agenda.status,
+    },
+  };
+}
