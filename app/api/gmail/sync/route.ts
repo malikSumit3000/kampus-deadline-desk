@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { Agenda, ReviewItem } from "@/app/dashboard-data";
 import { makeManualAgenda } from "@/lib/dashboard/optimistic";
 import { extractDeadline } from "@/lib/extraction/anthropic";
+import { classifySyncFailure } from "@/lib/extraction/errors";
 import { routeExtraction } from "@/lib/extraction/policy";
 import { getGmailMessage, isSensitiveMessage, listCandidateMessageIds, refreshGoogleAccessToken, selectSyncCandidates, summariseMessage } from "@/lib/gmail/client";
 import { parseSyncLease } from "@/lib/reliability/rpc-contracts";
@@ -186,13 +187,13 @@ export async function POST() {
     logOperationalEvent({ operation: "gmail_sync", status: "succeeded", durationMs: Date.now() - requestStartedAt, messagesProcessed: scanned, candidatesFound: candidates });
     return NextResponse.json({ scanned, candidates, lastSyncAt: now, privateAgendas, reviews: newReviews });
   } catch (error) {
-    const code = error instanceof Error ? error.message.slice(0, 80) : "sync_failed";
+    const failure = classifySyncFailure(error);
     const now = new Date().toISOString();
     await Promise.all([
-      admin.from("sync_runs").update({ status: "failed", finished_at: now, messages_scanned: scanned, candidates_found: candidates, error_code: code }).eq("id", lease.runId),
-      admin.from("gmail_connections").update({ last_error: code, updated_at: now }).eq("user_id", user.id),
+      admin.from("sync_runs").update({ status: "failed", finished_at: now, messages_scanned: scanned, candidates_found: candidates, error_code: failure.code }).eq("id", lease.runId),
+      admin.from("gmail_connections").update({ last_error: failure.code, updated_at: now }).eq("user_id", user.id),
     ]);
-    logOperationalEvent({ operation: "gmail_sync", status: "failed", durationMs: Date.now() - requestStartedAt, messagesProcessed: scanned, candidatesFound: candidates, errorCode: code });
-    return NextResponse.json({ error: "Sync failed. Reconnect Gmail if this continues." }, { status: 502 });
+    logOperationalEvent({ operation: "gmail_sync", status: "failed", durationMs: Date.now() - requestStartedAt, messagesProcessed: scanned, candidatesFound: candidates, errorCode: failure.code });
+    return NextResponse.json({ error: failure.message, code: failure.code }, { status: failure.status });
   }
 }

@@ -1,20 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { z } from "zod";
-
-export const extractionSchema = z.object({
-  relevant: z.boolean(),
-  sensitive: z.boolean(),
-  scope: z.enum(["shared", "private", "uncertain"]),
-  confidence: z.number().min(0).max(1),
-  action: z.enum(["new", "extension", "correction"]),
-  title: z.string().min(1).max(180),
-  category: z.enum(["Case Comps", "Committees", "Placements", "Academics"]),
-  deadline: z.string().datetime({ offset: true }).nullable(),
-  detail: z.string().max(500),
-  evidence: z.string().max(300),
-});
-
-export type DeadlineExtraction = z.infer<typeof extractionSchema>;
+import { normaliseDeadlineExtraction, type DeadlineExtraction } from "@/lib/extraction/normalise";
 
 export async function extractDeadline(input: {
   subject: string;
@@ -36,6 +21,9 @@ export async function extractDeadline(input: {
   const block = response.content.find((item) => item.type === "text");
   if (!block || block.type !== "text") throw new Error("model_output_missing");
   const json = block.text.replace(/^```json\s*|\s*```$/g, "");
-  return extractionSchema.parse(JSON.parse(json));
+  try {
+    return normaliseDeadlineExtraction(JSON.parse(json));
+  } catch {
+    throw new Error("model_output_invalid");
+  }
 }
-

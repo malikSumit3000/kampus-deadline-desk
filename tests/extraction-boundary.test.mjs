@@ -1,0 +1,48 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { normaliseDeadlineExtraction } from "../lib/extraction/normalise.ts";
+import { classifySyncFailure } from "../lib/extraction/errors.ts";
+
+const valid = {
+  relevant: true,
+  sensitive: false,
+  scope: "shared",
+  confidence: 0.96,
+  action: "new",
+  title: "Marketing assignment",
+  category: "Academics",
+  deadline: "2026-08-14T18:00:00+05:30",
+  detail: "Submit one PDF per group.",
+  evidence: "Due Friday at 6 PM IST.",
+};
+
+test("normalises harmless Claude formatting differences before validation", () => {
+  assert.deepEqual(normaliseDeadlineExtraction({
+    ...valid,
+    confidence: "96%",
+    action: "new deadline",
+    category: "academics",
+  }), valid);
+});
+
+test("does not invent an action when Claude returns an unknown decision", () => {
+  assert.throws(
+    () => normaliseDeadlineExtraction({ ...valid, action: "delete" }),
+    /model_output_invalid/,
+  );
+});
+
+test("distinguishes AI validation failures from Gmail connection failures", () => {
+  assert.deepEqual(classifySyncFailure(new Error("model_output_invalid")), {
+    code: "model_output_invalid",
+    message: "AI read the email but returned an unusable result. Please retry inbox refresh.",
+    status: 502,
+  });
+  assert.deepEqual(classifySyncFailure(new Error("gmail_token_refresh_failed")), {
+    code: "gmail_token_refresh_failed",
+    message: "Gmail authorization has expired. Please reconnect Gmail.",
+    status: 401,
+  });
+});
+
