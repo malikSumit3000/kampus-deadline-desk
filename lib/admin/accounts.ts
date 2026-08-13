@@ -1,3 +1,5 @@
+import { classifySyncFailure } from "../extraction/errors.ts";
+
 export type AdminAccountAction = "block" | "unblock";
 
 export type AdminAccount = {
@@ -29,6 +31,12 @@ export function removalEmailMatches(confirmation: unknown, expectedEmail: string
   return typeof confirmation === "string" && confirmation.trim() === expectedEmail;
 }
 
+function sanitizeSyncErrorCode(value: unknown) {
+  if (typeof value !== "string" || value.length === 0) return null;
+  if (/^[a-z0-9_.-]{1,80}$/i.test(value)) return value;
+  return classifySyncFailure(new Error(value)).code;
+}
+
 export function sanitizeAdminAccountRow(row: Record<string, unknown>): AdminAccount {
   return {
     id: String(row.id),
@@ -40,7 +48,7 @@ export function sanitizeAdminAccountRow(row: Record<string, unknown>): AdminAcco
     joinedAt: String(row.created_at),
     gmailConnected: row.gmail_connected === true,
     lastSyncAt: typeof row.last_sync_at === "string" ? row.last_sync_at : null,
-    syncErrorCode: typeof row.sync_error_code === "string" ? row.sync_error_code : null,
+    syncErrorCode: sanitizeSyncErrorCode(row.sync_error_code),
     privateTaskCount: Number(row.private_task_count ?? 0),
     openReviewCount: Number(row.open_review_count ?? 0),
   };

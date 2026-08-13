@@ -58,3 +58,22 @@ test("admin account rows expose only the approved operational fields", () => {
     openReviewCount: 2,
   });
 });
+
+test("admin account rows reduce verbose provider failures to stable error codes", () => {
+  const account = sanitizeAdminAccountRow({
+    id: "student-1",
+    display_name: "Student One",
+    email: "student@iimk.ac.in",
+    role: "student",
+    is_admin: false,
+    account_status: "active",
+    created_at: "2026-08-13T00:00:00.000Z",
+    gmail_connected: true,
+    last_sync_at: "2026-08-13T01:00:00.000Z",
+    sync_error_code: '400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low"}}',
+    private_task_count: 4,
+    open_review_count: 2,
+  });
+
+  assert.equal(account.syncErrorCode, "anthropic_credits_unavailable");
+});
