@@ -6,6 +6,7 @@ import type { Agenda } from "../dashboard-data";
 export type DashboardDialogState =
   | { kind: "category"; agenda?: Agenda }
   | { kind: "delete"; agenda: Agenda }
+  | { kind: "clear-private"; count: number }
   | { kind: "gmail" }
   | null;
 
@@ -15,12 +16,14 @@ export default function DashboardDialog({
   onClose,
   onCreateCategory,
   onDelete,
+  onClearPrivate,
 }: {
   dialog: DashboardDialogState;
   pendingAction: string | null;
   onClose: () => void;
   onCreateCategory: (category: string, agenda?: Agenda) => Promise<void>;
   onDelete: (agenda: Agenda) => Promise<void>;
+  onClearPrivate: () => Promise<void>;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -28,7 +31,7 @@ export default function DashboardDialog({
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
   const busyRef = useRef(false);
-  const isBusy = pendingAction === "category-create" || (dialog?.kind === "delete" && pendingAction === `delete:${dialog.agenda.id}`);
+  const isBusy = pendingAction === "category-create" || pendingAction === "clear-private" || (dialog?.kind === "delete" && pendingAction === `delete:${dialog.agenda.id}`);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -91,6 +94,23 @@ export default function DashboardDialog({
           <div className="dialog-actions">
             <button ref={closeRef} className="button secondary" type="button" onClick={onClose} disabled={isBusy}>Cancel</button>
             <button className="button danger" type="button" onClick={() => void onDelete(dialog.agenda)} disabled={isBusy}>{isBusy ? "Deleting…" : "Delete task"}</button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (dialog.kind === "clear-private") {
+    const noun = dialog.count === 1 ? "task" : "tasks";
+    return (
+      <div className="dialog-backdrop">
+        <section ref={dialogRef} className="app-dialog" role="dialog" aria-modal="true" aria-labelledby="clear-private-dialog-title">
+          <p className="eyebrow">Private task cleanup</p>
+          <h2 id="clear-private-dialog-title">Delete {dialog.count} private {noun}?</h2>
+          <p>Shared batch deadlines, categories, progress, review items, and your Gmail connection stay untouched.</p>
+          <div className="dialog-actions">
+            <button ref={closeRef} className="button secondary" type="button" onClick={onClose} disabled={isBusy}>Cancel</button>
+            <button className="button danger" type="button" onClick={() => void onClearPrivate()} disabled={isBusy}>{isBusy ? "Deleting…" : "Delete private tasks"}</button>
           </div>
         </section>
       </div>

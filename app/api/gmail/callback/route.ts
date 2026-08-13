@@ -25,6 +25,13 @@ export async function GET(request: Request) {
   const signedInEmail = normalizeIimkEmail(user?.email);
   if (!user || !signedInEmail) return NextResponse.redirect(new URL("/login", request.url));
 
+  const admin = createSupabaseAdminClient();
+  const { data: profile } = await admin.from("profiles").select("account_status").eq("id", user.id).maybeSingle();
+  if (profile?.account_status !== "active") {
+    await supabase.auth.signOut();
+    return NextResponse.redirect(new URL("/login?error=Your+Kampus+account+is+blocked", request.url));
+  }
+
   try {
     const tokens = await exchangeGoogleCode(code, url.origin);
     const connectedEmail = normalizeIimkEmail(await googleAccountEmail(tokens.access_token));
@@ -32,7 +39,6 @@ export async function GET(request: Request) {
       return back(request, "account_mismatch");
     }
 
-    const admin = createSupabaseAdminClient();
     const connectedAt = new Date().toISOString();
     const { error } = await admin.from("gmail_connections").upsert({
       user_id: user.id,

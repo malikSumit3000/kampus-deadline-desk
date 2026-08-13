@@ -14,6 +14,8 @@ export type DashboardViewProps = {
   createManualDeadline: (event: FormEvent<HTMLFormElement>) => void; availableCategories: string[]; updatePersonalCategory: (agenda: Agenda, category: string) => void;
   openCategoryDialog: (agenda?: Agenda) => void; openDeleteDialog: (agenda: Agenda) => void; canDeleteShared: boolean; nowMs: number; pendingAction: string | null;
   showManualEntry: boolean; setShowManualEntry: (show: boolean) => void; openGmailDetails: () => void;
+  openClearPrivateDialog: () => void;
+  totalPrivateCount: number;
 };
 
 function dateParts(date: string) {
@@ -31,7 +33,7 @@ function categoryTone(category: string) {
 }
 
 export default function DashboardView(props: DashboardViewProps) {
-  const { category, setCategory, visibleAgendas, expanded, toggleAgenda, stageStates, updateStageStatus, privateDates, updatePrivateDate, syncing, refreshInbox, openReviews, reviewCount, gmailConnected, gmailError, createManualDeadline, availableCategories, updatePersonalCategory, openCategoryDialog, openDeleteDialog, canDeleteShared, nowMs, pendingAction, showManualEntry, setShowManualEntry, openGmailDetails } = props;
+  const { category, setCategory, visibleAgendas, expanded, toggleAgenda, stageStates, updateStageStatus, privateDates, updatePrivateDate, syncing, refreshInbox, openReviews, reviewCount, gmailConnected, gmailError, createManualDeadline, availableCategories, updatePersonalCategory, openCategoryDialog, openDeleteDialog, canDeleteShared, nowMs, pendingAction, showManualEntry, setShowManualEntry, openGmailDetails, openClearPrivateDialog, totalPrivateCount } = props;
   const tabs = categoryTabs(availableCategories);
   const upNext = selectUpNext(visibleAgendas, stageStates, nowMs);
   const dueIn24h = visibleAgendas.filter((agenda) => { const remaining = new Date(agenda.deadline).getTime() - nowMs; return remaining >= 0 && remaining <= 86_400_000; }).length;
@@ -64,7 +66,7 @@ export default function DashboardView(props: DashboardViewProps) {
     <section className="runway-summary" aria-label="Deadline summary"><div className="summary-urgent"><strong>{dueIn24h}</strong><span>urgent</span></div><div className="summary-week"><strong>{dueThisWeek}</strong><span>this week</span></div><div className="summary-personal"><strong>{privateCount}</strong><span>personal</span></div></section>
 
     <section className="agenda-section">
-      <div className="section-label-row"><div><h2>Upcoming</h2></div><button className="review-pill" onClick={openReviews}><span>{reviewCount}</span> review items</button></div>
+      <div className="section-label-row"><div><h2>Upcoming</h2></div><div className="section-actions">{totalPrivateCount > 0 && <button className="clear-private-button" type="button" onClick={openClearPrivateDialog}>Clear private tasks</button>}<button className="review-pill" onClick={openReviews}><span>{reviewCount}</span> review items</button></div></div>
       <div className="tabs" role="tablist" aria-label="Deadline category">
         {tabs.map((item, index) => <button role="tab" id={`deadline-category-tab-${index}`} aria-controls="deadline-category-panel" aria-selected={category === item} tabIndex={category === item ? 0 : -1} className={category === item ? "active" : ""} onClick={() => setCategory(item)} onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => { const keys = ["ArrowLeft", "ArrowRight", "Home", "End"]; if (!keys.includes(event.key)) return; event.preventDefault(); const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length; setCategory(tabs[next]); event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus(); }} key={item}>{item}</button>)}
         <button type="button" className="category-add-tab" onClick={() => openCategoryDialog()}>+ Category</button>

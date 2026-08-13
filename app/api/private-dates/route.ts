@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { requireActiveAccount } from "@/lib/auth/account-guard";
 
 export async function PUT(request: Request) {
   const body = (await request.json()) as { stageId?: string; deadline?: string | null };
   if (!body.stageId || (body.deadline && !/^\d{4}-\d{2}-\d{2}$/.test(body.deadline))) return NextResponse.json({ error: "Invalid date" }, { status: 400 });
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const access = await requireActiveAccount();
+  if (!access.ok) return access.response;
+  const { supabase, user } = access;
 
   let error;
   if (body.stageId.startsWith("private:")) {
@@ -18,4 +18,3 @@ export async function PUT(request: Request) {
   }
   return error ? NextResponse.json({ error: "Save failed" }, { status: 400 }) : NextResponse.json({ ok: true });
 }
-

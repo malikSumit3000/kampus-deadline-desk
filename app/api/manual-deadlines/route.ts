@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { parseManualDeadline } from "@/lib/manual-deadlines";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { requireActiveAccount } from "@/lib/auth/account-guard";
 
 export async function POST(request: Request) {
   const item = parseManualDeadline(await request.json());
   if (!item) return NextResponse.json({ error: "Enter a title, category, and valid deadline." }, { status: 400 });
 
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const access = await requireActiveAccount();
+  if (!access.ok) return access.response;
+  const { supabase, user } = access;
 
   const { data, error } = await supabase.from("private_agendas").insert({
     user_id: user.id,

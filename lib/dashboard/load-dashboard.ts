@@ -25,7 +25,7 @@ export async function loadDashboard(user: User) {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
   const [{ data: profile }, { data: shared }, { data: progress }, { data: overrides }, { data: categoryOverrides }, { data: customCategories }, { data: privateItems }, { data: reviews }, { data: connection }] = await Promise.all([
-    supabase.from("profiles").select("display_name,email,role").eq("id", user.id).single(),
+    supabase.from("profiles").select("id,display_name,email,role,is_admin,account_status").eq("id", user.id).single(),
     supabase.from("agendas").select("id,stable_key,title,category,detail,source_label,confidence,agenda_stages(id,stable_key,name,deadline,note,position)").order("created_at"),
     supabase.from("user_progress").select("stage_id,status").eq("user_id", user.id),
     supabase.from("private_deadline_overrides").select("stage_id,deadline").eq("user_id", user.id),
@@ -73,7 +73,7 @@ export async function loadDashboard(user: User) {
 
   return {
     generatedAt: new Date().toISOString(),
-    profile: { name: profile?.display_name ?? user.email ?? "Student", email: profile?.email ?? user.email!, role: profile?.role ?? "student" },
+    profile: { id: profile?.id ?? user.id, name: profile?.display_name ?? user.email ?? "Student", email: profile?.email ?? user.email!, role: profile?.role ?? "student", isAdmin: profile?.is_admin === true, accountStatus: profile?.account_status ?? "active" },
     agendas,
     progress: Object.fromEntries(agendas.flatMap((agenda) => agenda.stages.map((stage) => [stage.id, stage.status]))),
     privateDates: overrideMap,
