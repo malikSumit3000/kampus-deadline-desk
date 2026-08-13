@@ -152,6 +152,19 @@ test("fails closed for personal-document attachment names", () => {
   assert.equal(isSensitiveMessage(summary({ attachments: ["offer_details.docx"] })), true);
 });
 
+test("does not bypass Claude for ordinary placement applications that mention CVs or shortlists", () => {
+  assert.equal(isSensitiveMessage(summary({
+    subject: "O3 Capital | Applications | SIP 2026",
+    body: "Submit your application and CV before the deadline. Shortlisted candidates will be contacted later.",
+  })), false);
+});
+
+test("still withholds clearly individualized sensitive messages", () => {
+  assert.equal(isSensitiveMessage(summary({ subject: "Your CGPA transcript" })), true);
+  assert.equal(isSensitiveMessage(summary({ subject: "Medical diagnosis and prescription" })), true);
+  assert.equal(isSensitiveMessage(summary({ subject: "Bank of America shortlist results", attachments: ["selected-students.xlsx"] })), true);
+});
+
 test("merges Gmail sync deltas without duplicating dashboard records", () => {
   const existingAgenda = { id: "agenda-1", deadline: "2026-08-12T00:00:00.000Z" };
   const newAgenda = { id: "agenda-2", deadline: "2026-08-11T00:00:00.000Z" };

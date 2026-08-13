@@ -131,6 +131,11 @@ export function summariseMessage(message: GmailMessage) {
 }
 
 export function isSensitiveMessage(summary: ReturnType<typeof summariseMessage>) {
-  const text = `${summary.subject} ${summary.attachments.join(" ")} ${summary.body}`.toLowerCase();
-  return /\b(shortlist|roster|resume|cv|result|grade|marks|medical|salary|cgpa|transcript|compensation|ctc|diagnosis|prescription)\b|\boffer[\s_-]+(letter|details?|package)\b|\brank[\s_-]+list\b/.test(text);
+  const subject = summary.subject.toLowerCase();
+  const attachments = summary.attachments.join(" ").toLowerCase();
+  const body = summary.body.toLowerCase();
+  const personalDocument = /\b(resume|cv|transcript|medical|diagnosis|prescription|salary|compensation|ctc)\b|\boffer[\s_-]+(letter|details?|package)\b|\brank[\s_-]+list\b/;
+  const individualizedSubject = /\b(shortlist|roster|result|grade|marks|cgpa|transcript|medical|diagnosis|prescription|salary|compensation|ctc)\b|\boffer[\s_-]+(letter|details?|package)\b|\brank[\s_-]+list\b/;
+  const individualizedBody = /\b(?:your|individual|confidential)\s+(?:cgpa|grade|marks|rank|salary|compensation|ctc|diagnosis|prescription|offer)\b|\bcgpa\s+transcript\b|\bdiagnosis\s+and\s+prescription\b/;
+  return personalDocument.test(attachments) || individualizedSubject.test(subject) || individualizedBody.test(body);
 }
