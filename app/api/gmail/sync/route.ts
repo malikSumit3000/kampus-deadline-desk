@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { Agenda, ReviewItem } from "@/app/dashboard-data";
 import { makeManualAgenda } from "@/lib/dashboard/optimistic";
 import { extractDeadline } from "@/lib/extraction/anthropic";
+import { planExtractionMutation, type ExistingDeadlineState } from "@/lib/extraction/context";
 import { classifySyncFailure } from "@/lib/extraction/errors";
 import { routeExtraction } from "@/lib/extraction/policy";
 import { shouldCompleteBackfill } from "@/lib/gmail/backfill";
@@ -74,23 +75,46 @@ export async function POST() {
         if (isSensitiveMessage(summary)) {
           outcome = "ignored_sensitive";
         } else {
-          const extractions = await extractDeadline(summary);
-          const datedExtractions = extractions.filter((extraction) => routeExtraction(extraction) === "private" && extraction.deadline);
+          const { data: currentRows, error: currentStateError } = await admin.from("private_agendas")
+            .select("id,title,category,deadline,source_label")
+            .eq("user_id", user.id);
+          if (currentStateError) throw new Error("current_deadline_state_failed");
+          const currentState: ExistingDeadlineState[] = (currentRows ?? []).map((row) => ({
+            id: row.id,
+            title: row.title,
+            category: row.category,
+            deadline: row.deadline,
+            source: row.source_label,
+          }));
+          const extractions = await extractDeadline({ messages: [summary], currentState });
+          const datedExtractions = extractions
+            .map((extraction, taskIndex) => ({ extraction, taskIndex }))
+            .filter(({ extraction }) => routeExtraction(extraction) === "private" && extraction.deadline);
           outcome = datedExtractions.length > 0 ? "private" : "ignored";
           candidates += datedExtractions.length;
 
-          for (const [taskIndex, extraction] of datedExtractions.entries()) {
-            const { data: agenda, error: agendaError } = await admin.from("private_agendas").upsert({
-              user_id: user.id,
-              gmail_message_id: id,
-              gmail_task_index: taskIndex,
-              title: extraction.title,
-              category: extraction.category,
-              detail: extraction.detail,
-              source_label: summary.sender,
-              confidence: extraction.confidence,
-              deadline: extraction.deadline,
-            }, { onConflict: "user_id,gmail_message_id,gmail_task_index", ignoreDuplicates: true })
+          for (const { taskIndex, extraction } of datedExtractions) {
+            const mutation = planExtractionMutation(extraction);
+            const agendaQuery = mutation.kind === "update"
+              ? admin.from("private_agendas").update({
+                detail: extraction.detail,
+                source_label: summary.sender,
+                confidence: extraction.confidence,
+                deadline: extraction.deadline!,
+                updated_at: new Date().toISOString(),
+              }).eq("id", mutation.agendaId).eq("user_id", user.id)
+              : admin.from("private_agendas").upsert({
+                user_id: user.id,
+                gmail_message_id: id,
+                gmail_task_index: taskIndex,
+                title: extraction.title,
+                category: extraction.category,
+                detail: extraction.detail,
+                source_label: summary.sender,
+                confidence: extraction.confidence,
+                deadline: extraction.deadline!,
+              }, { onConflict: "user_id,gmail_message_id,gmail_task_index", ignoreDuplicates: true });
+            const { data: agenda, error: agendaError } = await agendaQuery
               .select("id,title,category,detail,source_label,confidence,deadline,status").maybeSingle();
             if (agendaError) throw new Error("private_agenda_insert_failed");
             if (!agenda) continue;

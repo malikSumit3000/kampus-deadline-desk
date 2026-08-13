@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { initialGmailScanAfter, shouldCompleteBackfill } from "../lib/gmail/backfill.ts";
 import { classifyShortlistDeadline } from "../lib/gmail/shortlist.ts";
-import { gmailWindowQuery, isSensitiveMessage, limitSyncCandidates, selectSyncCandidates } from "../lib/gmail/client.ts";
+import { gmailWindowQuery, isSensitiveMessage, limitSyncCandidates, selectSyncCandidates, summariseMessage } from "../lib/gmail/client.ts";
 import { processMessagesIndependently } from "../lib/gmail/process-batch.ts";
 import { mergeSyncResult } from "../lib/dashboard/sync.ts";
 import { makeManualAgenda } from "../lib/dashboard/optimistic.ts";
@@ -28,6 +28,30 @@ test("lists every message after the scan boundary without keyword filtering", ()
     gmailWindowQuery("2026-08-11T00:00:00.000Z"),
     "after:1786406400",
   );
+});
+
+test("passes the full plaintext Gmail body with line breaks instead of a snippet", () => {
+  const fullBody = "Applications are open.\n\nDeadline: 13 August 2026 at 17:59 IST.\nSubmit through the portal.";
+  const encoded = Buffer.from(fullBody).toString("base64url");
+  const result = summariseMessage({
+    id: "message-1",
+    internalDate: String(Date.parse("2026-08-13T08:00:00.000Z")),
+    payload: {
+      mimeType: "multipart/alternative",
+      headers: [
+        { name: "Subject", value: "O3 Capital | Applications | SIP 2026" },
+        { name: "From", value: "placements@iimk.ac.in" },
+      ],
+      parts: [
+        { mimeType: "text/plain", body: { data: encoded } },
+        { mimeType: "text/html", body: { data: Buffer.from(`<p>${fullBody}</p>`).toString("base64url") } },
+      ],
+    },
+  });
+
+  assert.equal(result.body, fullBody);
+  assert.match(result.body, /Deadline: 13 August 2026 at 17:59 IST/);
+  assert.equal(result.body.includes(fullBody + fullBody), false);
 });
 
 test("one failed message does not prevent Claude processing later messages", async () => {

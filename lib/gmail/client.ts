@@ -98,15 +98,30 @@ function decodeBody(data?: string) {
   return Buffer.from(data, "base64url").toString("utf8");
 }
 
-function collectText(part?: GmailPart): string[] {
-  if (!part) return [];
+function collectText(part: GmailPart | undefined, plain: string[], html: string[]) {
+  if (!part) return;
   const decoded = decodeBody(part.body?.data);
-  const own = part.mimeType === "text/plain"
-    ? [decoded]
-    : part.mimeType === "text/html"
-      ? [decoded.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ")]
-      : [];
-  return own.concat((part.parts ?? []).flatMap(collectText));
+  if (part.mimeType === "text/plain" && decoded) plain.push(decoded);
+  if (part.mimeType === "text/html" && decoded) {
+    html.push(decoded
+      .replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<\/(p|div|li|tr|h[1-6])>|<br\s*\/?>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">"));
+  }
+  for (const child of part.parts ?? []) collectText(child, plain, html);
+}
+
+function normaliseMessageBody(value: string) {
+  return value
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\t\f\v ]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 30_000);
 }
 
 export function summariseMessage(message: GmailMessage) {
@@ -121,11 +136,15 @@ export function summariseMessage(message: GmailMessage) {
   };
   visit(message.payload);
 
+  const plain: string[] = [];
+  const html: string[] = [];
+  collectText(message.payload, plain, html);
+
   return {
     subject: headers.subject ?? "Untitled message",
     sender: headers.from ?? "Unknown sender",
     receivedAt: new Date(Number(message.internalDate)).toISOString(),
-    body: collectText(message.payload).join("\n").replace(/\s+/g, " ").slice(0, 12_000),
+    body: normaliseMessageBody((plain.length > 0 ? plain : html).join("\n\n")),
     attachments,
   };
 }

@@ -22,8 +22,15 @@ export const extractionTool = {
             deadline: { anyOf: [{ type: "string", format: "date-time" }, { type: "null" }] },
             detail: { type: "string", maxLength: 500 },
             evidence: { type: "string", maxLength: 300 },
+            agendaId: {
+              anyOf: [
+                { type: "string", format: "uuid", description: "Exact id from CURRENT STATE when updating or adding a stage." },
+                { type: "null" },
+              ],
+            },
+            isNewStage: { type: "boolean" },
           },
-          required: ["relevant", "sensitive", "scope", "confidence", "action", "title", "category", "deadline", "detail", "evidence"],
+          required: ["relevant", "sensitive", "scope", "confidence", "action", "title", "category", "deadline", "detail", "evidence", "agendaId", "isNewStage"],
         },
       },
     },

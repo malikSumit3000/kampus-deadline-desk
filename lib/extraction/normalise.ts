@@ -11,6 +11,8 @@ export const extractionSchema = z.object({
   deadline: z.string().datetime({ offset: true }).nullable(),
   detail: z.string().max(500),
   evidence: z.string().max(300),
+  agendaId: z.string().uuid().nullable(),
+  isNewStage: z.boolean(),
 });
 
 export type DeadlineExtraction = z.infer<typeof extractionSchema>;
