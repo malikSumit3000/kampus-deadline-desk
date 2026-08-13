@@ -14,7 +14,9 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 import { DELETE as deleteAccount } from "../app/api/account/route";
+import { GET as listAdminAccounts } from "../app/api/admin/accounts/route";
 import { DELETE as deleteAgenda } from "../app/api/agendas/[id]/route";
+import { DELETE as clearPrivateAgendas } from "../app/api/agendas/route";
 import { POST as askKampus } from "../app/api/ask-kampus/route";
 import { POST as syncGmail } from "../app/api/gmail/sync/route";
 import { PATCH as resolveProposal } from "../app/api/moderator/proposals/[id]/route";
@@ -34,6 +36,21 @@ function connectionQuery(connection: unknown) {
     eq() { return this; },
     is() { return this; },
     maybeSingle: vi.fn().mockResolvedValue({ data: connection }),
+  };
+}
+
+function profileQuery(profile: unknown = {
+  id: "user-1",
+  email: "student@iimk.ac.in",
+  display_name: "Student One",
+  role: "student",
+  is_admin: false,
+  account_status: "active",
+}) {
+  return {
+    select() { return this; },
+    eq() { return this; },
+    maybeSingle: vi.fn().mockResolvedValue({ data: profile }),
   };
 }
 
@@ -91,7 +108,7 @@ describe("route authorization boundaries", () => {
       },
       error: null,
     });
-    mocks.createAdminClient.mockReturnValue({ rpc });
+    mocks.createAdminClient.mockReturnValue({ from: vi.fn().mockReturnValue(profileQuery()), rpc });
 
     const response = await resolveReview(new Request("http://localhost/api/reviews/review-1", {
       method: "PATCH",
@@ -124,7 +141,7 @@ describe("route authorization boundaries", () => {
     mocks.createServerClient.mockResolvedValue(authenticatedClient());
     const rpc = vi.fn().mockResolvedValue({ data: [{ run_id: null, acquired: false }], error: null });
     mocks.createAdminClient.mockReturnValue({
-      from: vi.fn().mockReturnValue(connectionQuery({ encrypted_refresh_token: "unused", scan_after: "2026-08-11T00:00:00.000Z" })),
+      from: vi.fn((table: string) => table === "profiles" ? profileQuery() : connectionQuery({ encrypted_refresh_token: "unused", scan_after: "2026-08-11T00:00:00.000Z" })),
       rpc,
     });
 
@@ -151,6 +168,7 @@ describe("route authorization boundaries", () => {
       ...authenticatedClient(),
       from: vi.fn().mockReturnValue(deleteQuery),
     });
+    mocks.createAdminClient.mockReturnValue({ from: vi.fn().mockReturnValue(profileQuery()) });
 
     const response = await deleteAgenda(new Request("http://localhost/api/agendas/private-2?scope=private", { method: "DELETE" }), {
       params: Promise.resolve({ id: "private-2" }),
@@ -161,11 +179,23 @@ describe("route authorization boundaries", () => {
     expect(filters).toEqual({ id: "private-2", user_id: "user-1" });
   });
 
+  it("clears private tasks through the authenticated user's atomic RPC", async () => {
+    mocks.createServerClient.mockResolvedValue(authenticatedClient());
+    const rpc = vi.fn().mockResolvedValue({ data: 4, error: null });
+    mocks.createAdminClient.mockReturnValue({ from: vi.fn().mockReturnValue(profileQuery()), rpc });
+
+    const response = await clearPrivateAgendas();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deletedCount: 4 });
+    expect(rpc).toHaveBeenCalledWith("clear_private_agendas", { p_user_id: "user-1" });
+  });
+
   it("deletes only the authenticated account id", async () => {
     mocks.createServerClient.mockResolvedValue(authenticatedClient());
     const deletedIds: string[] = [];
     mocks.createAdminClient.mockReturnValue({
-      from: vi.fn().mockReturnValue(connectionQuery(null)),
+      from: vi.fn((table: string) => table === "profiles" ? profileQuery() : connectionQuery(null)),
       auth: { admin: { deleteUser: vi.fn(async (id: string) => {
         deletedIds.push(id);
         return { error: null };
@@ -176,5 +206,39 @@ describe("route authorization boundaries", () => {
 
     expect(response.status).toBe(200);
     expect(deletedIds).toEqual(["user-1"]);
+  });
+
+  it("denies the account monitor to an active non-admin", async () => {
+    mocks.createServerClient.mockResolvedValue(authenticatedClient());
+    const rpc = vi.fn();
+    mocks.createAdminClient.mockReturnValue({ from: vi.fn().mockReturnValue(profileQuery()), rpc });
+
+    const response = await listAdminAccounts();
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "admin_required" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("returns only approved operational account fields to an admin", async () => {
+    mocks.createServerClient.mockResolvedValue(authenticatedClient());
+    const adminProfile = { id: "user-1", email: "student@iimk.ac.in", display_name: "Sumit", role: "moderator", is_admin: true, account_status: "active" };
+    const rpc = vi.fn().mockResolvedValue({ data: [{
+      id: "user-2", display_name: "Student Two", email: "two@iimk.ac.in", role: "student", is_admin: false,
+      account_status: "active", created_at: "2026-08-13T00:00:00.000Z", gmail_connected: true,
+      last_sync_at: null, sync_error_code: null, private_task_count: 3, open_review_count: 1,
+      subject: "secret subject", encrypted_refresh_token: "secret token",
+    }], error: null });
+    mocks.createAdminClient.mockReturnValue({ from: vi.fn().mockReturnValue(profileQuery(adminProfile)), rpc });
+
+    const response = await listAdminAccounts();
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.accounts[0]).toEqual({
+      id: "user-2", name: "Student Two", email: "two@iimk.ac.in", role: "student", isAdmin: false,
+      status: "active", joinedAt: "2026-08-13T00:00:00.000Z", gmailConnected: true,
+      lastSyncAt: null, syncErrorCode: null, privateTaskCount: 3, openReviewCount: 1,
+    });
   });
 });

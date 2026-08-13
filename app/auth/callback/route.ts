@@ -35,5 +35,11 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login?error=Your+profile+could+not+be+created", url));
   }
 
+  const { data: profile } = await admin.from("profiles").select("account_status").eq("id", user.id).single();
+  if (profile?.account_status === "blocked") {
+    await supabase.auth.signOut();
+    return NextResponse.redirect(new URL("/login?error=Your+Kampus+account+is+blocked", url));
+  }
+
   return NextResponse.redirect(new URL("/", url));
 }

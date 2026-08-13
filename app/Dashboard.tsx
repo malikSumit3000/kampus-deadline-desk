@@ -13,6 +13,7 @@ import { makeManualAgenda } from "@/lib/dashboard/optimistic";
 import { mergeSyncResult, type GmailSyncDelta } from "@/lib/dashboard/sync";
 import type { ModeratorDecision } from "@/lib/reliability/rpc-contracts";
 import AskKampusLauncher from "./AskKampusLauncher";
+import AdminView from "./dashboard/AdminView";
 import DashboardDialog, { type DashboardDialogState } from "./dashboard/DashboardDialog";
 import DashboardView from "./dashboard/DashboardView";
 import ModeratorView from "./dashboard/ModeratorView";
@@ -24,12 +25,13 @@ const navItems: Array<{ id: AppView; label: string; marker: string }> = [
   { id: "dashboard", label: "Deadline runway", marker: "01" },
   { id: "reviews", label: "Review inbox", marker: "02" },
   { id: "moderator", label: "Moderator queue", marker: "03" },
+  { id: "admin", label: "Account monitor", marker: "05" },
   { id: "privacy", label: "Privacy & account", marker: "04" },
 ];
 
 type DashboardData = {
   generatedAt: string;
-  profile: { name: string; email: string; role: string };
+  profile: { id?: string; name: string; email: string; role: string; isAdmin?: boolean; accountStatus?: string };
   agendas: Agenda[];
   progress: Record<string, StageStatus>;
   privateDates: Record<string, string>;
@@ -270,6 +272,28 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
     setNotice("Task deleted.");
   }
 
+  async function clearPrivateAgendas() {
+    setPendingAction("clear-private");
+    setNotice("Deleting private tasks…");
+    try {
+      const response = await fetch("/api/agendas", { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Private tasks could not be deleted.");
+      const privateStageIds = new Set(agendas.filter((agenda) => agenda.scope === "private").flatMap((agenda) => agenda.stages.map((stage) => stage.id)));
+      setAgendas((current) => current.filter((agenda) => agenda.scope !== "private"));
+      setExpanded((current) => current.filter((id) => agendas.some((agenda) => agenda.id === id && agenda.scope === "shared")));
+      setStageStates((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !privateStageIds.has(id))));
+      setPrivateDates((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !privateStageIds.has(id))));
+      setDialog(null);
+      const count = Number(result.deletedCount ?? 0);
+      setNotice(`${count} private ${count === 1 ? "task" : "tasks"} deleted.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Private tasks could not be deleted.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   async function createPersonalCategory(category: string, agenda?: Agenda) {
     const trimmed = category.trim();
     if (!trimmed) return setNotice("Enter a category name.");
@@ -335,7 +359,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
 
         <nav className="nav-stack">
           <p className="eyebrow">Workspace</p>
-          {navItems.filter((item) => item.id !== "moderator" || initialData.profile.role === "moderator").map((item) => (
+          {navItems.filter((item) => (item.id !== "moderator" || initialData.profile.role === "moderator") && (item.id !== "admin" || initialData.profile.isAdmin)).map((item) => (
             <button
               key={item.id}
               className={view === item.id ? "nav-item active" : "nav-item"}
@@ -384,7 +408,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
             value={view}
             onChange={(event) => setView(event.target.value as AppView)}
           >
-            {navItems.filter((item) => item.id !== "moderator" || initialData.profile.role === "moderator").map((item) => (
+            {navItems.filter((item) => (item.id !== "moderator" || initialData.profile.role === "moderator") && (item.id !== "admin" || initialData.profile.isAdmin)).map((item) => (
               <option value={item.id} key={item.id}>{item.label}</option>
             ))}
           </select>
@@ -428,6 +452,8 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
             showManualEntry={showManualEntry}
             setShowManualEntry={setShowManualEntry}
             openGmailDetails={() => setDialog({ kind: "gmail" })}
+            openClearPrivateDialog={() => setDialog({ kind: "clear-private", count: agendas.filter((agenda) => agenda.scope === "private").length })}
+            totalPrivateCount={agendas.filter((agenda) => agenda.scope === "private").length}
           />
         )}
 
@@ -437,6 +463,10 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
 
         {view === "moderator" && (
           <ModeratorView proposals={proposals} resolveProposal={resolveProposal} createSharedAgenda={createSharedAgenda} />
+        )}
+
+        {view === "admin" && initialData.profile.isAdmin && (
+          <AdminView currentUserId={initialData.profile.id ?? ""} setNotice={setNotice} />
         )}
 
         {view === "privacy" && (
@@ -454,6 +484,7 @@ export default function Dashboard({ initialData }: { initialData: DashboardData 
           onClose={() => setDialog(null)}
           onCreateCategory={createPersonalCategory}
           onDelete={deleteAgenda}
+          onClearPrivate={clearPrivateAgendas}
         />
         <AskKampusLauncher />
       </main>

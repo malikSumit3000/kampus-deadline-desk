@@ -1,14 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { normalizeIimkEmail } from "@/lib/auth/domain-policy";
+import { requireActiveAccount } from "@/lib/auth/account-guard";
 import { googleAuthorizationUrl } from "@/lib/google/oauth";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const email = normalizeIimkEmail(user?.email);
-  if (!user || !email) return NextResponse.redirect(new URL("/login", request.url));
+  const access = await requireActiveAccount();
+  if (!access.ok) return access.response;
+  const email = normalizeIimkEmail(access.user.email);
+  if (!email) return NextResponse.redirect(new URL("/login", request.url));
 
   const state = randomBytes(32).toString("base64url");
   const origin = new URL(request.url).origin;
@@ -22,4 +22,3 @@ export async function GET(request: Request) {
   });
   return response;
 }
-

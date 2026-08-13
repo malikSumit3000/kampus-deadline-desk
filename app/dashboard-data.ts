@@ -1,7 +1,7 @@
 export type Category = string;
 
 export type StageStatus = "to-do" | "in progress" | "submitted";
-export type AppView = "dashboard" | "reviews" | "moderator" | "privacy";
+export type AppView = "dashboard" | "reviews" | "moderator" | "admin" | "privacy";
 
 export type AgendaStage = {
   id: string;

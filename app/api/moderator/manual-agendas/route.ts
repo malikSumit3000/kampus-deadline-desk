@@ -1,19 +1,15 @@
 import { NextResponse } from "next/server";
 import { parseManualDeadline } from "@/lib/manual-deadlines";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { requireActiveAccount } from "@/lib/auth/account-guard";
 
 export async function POST(request: Request) {
   const item = parseManualDeadline(await request.json());
   if (!item) return NextResponse.json({ error: "Enter a title, category, and valid deadline." }, { status: 400 });
 
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  if (profile?.role !== "moderator") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const admin = createSupabaseAdminClient();
+  const access = await requireActiveAccount();
+  if (!access.ok) return access.response;
+  const { user, profile, admin } = access;
+  if (profile.role !== "moderator") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { data, error } = await admin.rpc("create_shared_agenda", {
     p_actor_id: user.id,
     p_title: item.title,

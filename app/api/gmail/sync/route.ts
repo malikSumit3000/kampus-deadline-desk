@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import type { Agenda, ReviewItem } from "@/app/dashboard-data";
+import { requireActiveAccount } from "@/lib/auth/account-guard";
 import { makeManualAgenda } from "@/lib/dashboard/optimistic";
 import { extractDeadline } from "@/lib/extraction/anthropic";
 import { planExtractionMutation, type ExistingDeadlineState } from "@/lib/extraction/context";
@@ -12,19 +13,15 @@ import { processMessagesIndependently } from "@/lib/gmail/process-batch";
 import { parseSyncLease } from "@/lib/reliability/rpc-contracts";
 import { logOperationalEvent } from "@/lib/observability/events";
 import { decryptToken } from "@/lib/security/token-crypto";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
 
 export async function POST() {
   const requestStartedAt = Date.now();
   const syncStartedAt = new Date().toISOString();
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const admin = createSupabaseAdminClient();
+  const access = await requireActiveAccount();
+  if (!access.ok) return access.response;
+  const { user, admin } = access;
   const { data: connection } = await admin.from("gmail_connections").select("*")
     .eq("user_id", user.id).is("revoked_at", null).maybeSingle();
   if (!connection) return NextResponse.json({ error: "Gmail is not connected" }, { status: 409 });

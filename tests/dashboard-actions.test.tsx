@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Dashboard from "../app/Dashboard";
+import type { Agenda } from "../app/dashboard-data";
 
 const privateAgenda = {
   id: "private-1",
@@ -25,7 +26,19 @@ const privateAgenda = {
   }],
 };
 
-function data(agendas = [privateAgenda]) {
+const sharedAgenda = {
+  ...privateAgenda,
+  id: "shared-1",
+  title: "Shared batch task",
+  category: "Case Comps",
+  scope: "shared" as const,
+  stages: [{
+    ...privateAgenda.stages[0],
+    id: "shared-stage-1",
+  }],
+};
+
+function data(agendas: Agenda[] = [privateAgenda]) {
   return {
     generatedAt: "2026-08-11T09:00:00.000Z",
     profile: { name: "Student One", email: "student@iimk.ac.in", role: "student" },
@@ -39,7 +52,7 @@ function data(agendas = [privateAgenda]) {
   };
 }
 
-function connectedData(agendas = [privateAgenda]) {
+function connectedData(agendas: Agenda[] = [privateAgenda]) {
   return { ...data(agendas), gmail: { connected: true, lastSyncAt: new Date().toISOString(), error: null } };
 }
 
@@ -96,6 +109,27 @@ describe("dashboard local actions", () => {
 
     expect(screen.queryByText("Existing task")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Task deleted");
+  });
+
+  it("clears only private tasks in place after confirming the exact count", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ deletedCount: 1 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<Dashboard initialData={data([privateAgenda, sharedAgenda])} />);
+
+    await user.click(screen.getByRole("tab", { name: "Case Comps" }));
+    await user.click(screen.getByRole("button", { name: "Clear private tasks" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete 1 private task?" });
+    expect(within(dialog).getByText(/shared batch deadlines.*untouched/i)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Delete private tasks" }));
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/agendas", { method: "DELETE" });
+    expect(screen.queryByText("Existing task")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Shared batch task").length).toBeGreaterThan(0);
+    expect(screen.getByRole("status")).toHaveTextContent("1 private task deleted");
   });
 
   it("adds an approved review to the dashboard without a reload", async () => {
